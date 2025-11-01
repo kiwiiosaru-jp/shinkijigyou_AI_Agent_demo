@@ -1,15 +1,15 @@
 # セキュリティ監査結果報告書
-**対象名:** host.docker.internal:8501  
-**実施日:** 2025-11-01  
+**対象名:** host.docker.internal:5173  
+**実施日:** 2025-11-02  
 **実行ID:** -  
 **実施者:** セキュリティ検証チーム
 
 ---
 
 ## 1. エグゼクティブサマリ
-- 重大リスク（HIGH 以上）: **0件** ／ NG: **2件** ／ OK: **9件** ／ N/A: **0件**
+- 重大リスク（HIGH 以上）: **0件** ／ NG: **1件** ／ OK: **10件** ／ N/A: **0件**
 - 総合判定（ゲート）: **Fail**
-- 主要トピック: ①セキュリティヘッダ（CSP/HSTS/Frame-Options/CTO等） ②レート制限・コスト濫用耐性 ③ヘッダ防御強化
+- 主要トピック: ①レート制限・コスト濫用耐性 ②ヘッダ防御強化 ③レート制御整備
 
 ## 2. 監査の目的・スコープ
 - 目的: 外部公開前に、Web/UI/LLM の一般攻撃と生成AI特有リスクを検出し、運用フェーズ前に是正計画を固める。
@@ -17,7 +17,7 @@
 - スコープ（白箱）: Secrets / SBOM+SCA / Semgrep（LLM 最小） / Trivy FS / 依存関係整合性
 
 ## 3. 対象・前提条件
-- 対象 URL: `http://host.docker.internal:8501`
+- 対象 URL: `http://host.docker.internal:5173`
 - 対象コード: `./target/` 配下の Web アプリケーション一式
 - 前提条件: コンテナから `host.docker.internal` でホストへ到達、認証ヘッダ/クッキーは `.env` で付与可能
 
@@ -32,28 +32,16 @@
 
 ## 5. 結果サマリ（OK/NG/N/A 集計・重大度別）
 - チェック総数: **11**
-- OK: **9** ／ NG: **2** ／ N/A: **0** ／ 要確認: **0**
+- OK: **10** ／ NG: **1** ／ N/A: **0** ／ 要確認: **0**
 - 主要エビデンス: ZAP `reports/zap/baseline.html`, Playwright `reports/playwright/dom-trace.json`, k6 `reports/k6/k6.json`, garak `reports/garak/garak.report.jsonl`
 
 ## 6. 主要リスクの要約（Top Findings）
-1. **BB-WEB-107** — セキュリティヘッダ（CSP/HSTS/Frame-Options/CTO等）  
-   - 重大度: 情報 ／ ステータス: NG  
-   - 証跡: `reports/zap/zap.xml`
-   - 推奨: HTTP 応答で CSP / HSTS / X-Frame-Options / X-Content-Type-Options を適切に設定し、フレーム埋め込みとプロトコルダウングレードを防止してください。
-
-2. **BB-WEB-108** — レート制限・コスト濫用耐性  
+1. **BB-WEB-108** — レート制限・コスト濫用耐性  
    - 重大度: 情報 ／ ステータス: NG  
    - 証跡: `reports/k6/k6.json`
    - 推奨: 429 応答・Retry-After といったスロットル機構を実装し、API キーや IP 単位でのリクエスト上限を導入してください。
 
 ## 7. 詳細所見（Finding 個票）
-### [BB-WEB-107] セキュリティヘッダ（CSP/HSTS/Frame-Options/CTO等）
-- **ステータス**: NG  
-- **重大度**: 情報  
-- **技術的根拠**: reports/zap/zap.xml  
-- **再現手順**: ZAP baseline HTML で Security Headers の警告を確認し、対象 URL へリクエスト→レスポンスヘッダを確認。  
-- **推奨対策**: HTTP 応答で CSP / HSTS / X-Frame-Options / X-Content-Type-Options を適切に設定し、フレーム埋め込みとプロトコルダウングレードを防止してください。
-
 ### [BB-WEB-108] レート制限・コスト濫用耐性
 - **ステータス**: NG  
 - **重大度**: 情報  
@@ -68,8 +56,7 @@
 ## 9. 改善計画（優先順位・担当・期日）
 | No | Finding | 対策 | 優先度 | 担当 | 期限 |
 |---:|---|---|---|---|---|
-| 1 | BB-WEB-107 | HTTP 応答で CSP / HSTS / X-Frame-Options / X-Content-Type-Options を適切に設定し、フレーム埋め込みとプロトコルダウングレードを防止してください。 | 高 | バックエンドチーム | 2025-11-15 |
-| 2 | BB-WEB-108 | 429 応答・Retry-After といったスロットル機構を実装し、API キーや IP 単位でのリクエスト上限を導入してください。 | 高 | プラットフォームチーム | 2025-11-22 |
+| 1 | BB-WEB-108 | 429 応答・Retry-After といったスロットル機構を実装し、API キーや IP 単位でのリクエスト上限を導入してください。 | 高 | プラットフォームチーム | 2025-11-22 |
 
 
 ## 10. 既知の制限・リスク受容・次回方針
