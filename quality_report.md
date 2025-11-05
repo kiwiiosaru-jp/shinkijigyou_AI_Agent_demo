@@ -57,7 +57,7 @@
 
 ### セキュリティ監査報告書 (全文)
 
-```markdown
+
 # セキュリティ監査結果報告書
 **対象名:** host.docker.internal:8501  
 **実施日:** 2025-11-05  
@@ -199,7 +199,7 @@
 - 今回の検証では 403 応答をレート制限エビデンスとして扱った。次回は実際の 429/Retry-After 実装を確認予定。
 
 ## 11. 付録A：checklist.yaml 抜粋
-```yaml
+
 - id: WB-SECRETS-001
   category: Whitebox/Secrets
   item: 認証情報のハードコード/Git漏洩
@@ -235,7 +235,7 @@
   status: OK
   severity: null
   evidence: reports/whitebox/trivy.sarif
-```
+
 ## 12. 付録B：各ツールの生レポート一覧
 - ZAP: `reports/zap/baseline.html`, `reports/zap/zap.xml`
 - Playwright: `reports/playwright/dom-trace.json`
@@ -249,7 +249,7 @@
 - 監査環境: Docker コンテナ（ZAP / Playwright / k6 / garak 等）
 - 変数: `.env` ファイルで `TARGET_URL`, `AUTH_HEADER`, `COOKIE`, `GARAK_*` を調整
 - Git / コミット ID: `local`
-```
+
 
 #### LLM 白箱レビュー（品質／セキュリティ）
 - 実行ステータス: **NG**
@@ -328,7 +328,6 @@
 
 #### 単体テスト計画: `target/20251101_codex_test/04_単体テスト/docs/テスト計画.md`
 
-```markdown
 # 単体テスト計画
 
 ## 対象モジュールとテスト観点
@@ -365,13 +364,12 @@ python -m pytest tests/unit
 ```
 
 > **メモ:** 機能テスト・総合テストの計画書は、各フェーズで `機能テスト/`, `総合テスト/` 配下に順次追加します。
-```
+
 
 - JUnit XML: 未検出 （手動レポートを参照）
 
 #### 単体テスト結果報告書: `target/20251101_codex_test/04_単体テスト/docs/単体テスト結果報告書.md`
 
-```markdown
 # 単体テスト結果報告書
 
 - 実行日時: 2025-10-30 17:10:20 JST
@@ -399,14 +397,13 @@ python -m pytest tests/unit
 ## 今後のTODO
 - excerpt 境界値やフォールバック動作など追加ケースを順次拡充予定。
 - 機能テスト・総合テストの自動実行は該当フェーズで実装予定。
-```
+
 
 
 ## 8. 機能テスト結果
 
 #### 機能テスト計画: `target/20251101_codex_test/05_機能テスト/docs/テスト計画.md`
 
-```markdown
 # 機能テスト計画
 
 ## テスト対象と範囲
@@ -441,13 +438,12 @@ python -m pytest tests/unit
 ## スケジュール
 - テストケース実装: 開発フェーズ後半（3.5〜3.7開通後）
 - 実行/報告: 機能テストフェーズ（WBS 5.3〜5.6）にて実施
-```
 
 - 機能テスト XML: 未検出 （手動レポートを参照）
 
 #### 機能テスト結果報告書: `target/20251101_codex_test/05_機能テスト/docs/機能テスト結果報告書.md`
 
-```markdown
+
 # 機能テスト結果報告書
 
 - 実行日時: 2025-10-30 17:38:14 JST
@@ -475,7 +471,6 @@ python -m pytest tests/unit
 
 ## リワーク有無
 - テスト結果に基づく仕様修正の必要はありません。
-```
 
 
 ## 9. 総合テスト結果（手動）
@@ -485,7 +480,6 @@ python -m pytest tests/unit
 - 試験計画/実施手順:
   - `target/20251101_codex_test/06_総合テスト/docs/テスト計画.md`
 
-```markdown
 # 総合テスト計画
 
 ## 目的
@@ -524,10 +518,10 @@ python -m pytest tests/unit
 - 実 Azure 接続を伴うため、実施前に利用規約・レート制限を再確認する
 - `RUN_E2E_MODE` の未設定時は `live` が既定となる。録画再生が必要な場合のみ明示的に `replay` へ切り替える。
 - 必要に応じて録画やスクリーンショットを取得し、レビュー用資料として保存する
-```
+
   - `target/20251101_codex_test/06_総合テスト/docs/実施手順.md`
 
-```markdown
+
 # 総合テスト実施手順
 
 ## 事前条件
@@ -553,7 +547,7 @@ python -m pytest tests/unit
 ## 備考
 - テストは実 Azure にアクセスするため、レート制限や認証エラーに注意してください
 - Streamlit UI の E2E シナリオは別途手動で実施し、結果を `総合テスト/完了報告.md` に記録予定
-```
+
 - 手動確認結果: 計画記載の試験項目は全て **PASS** (手動検証により確認済み)
 - 添付: なし
 
