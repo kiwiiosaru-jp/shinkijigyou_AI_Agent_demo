@@ -1,9 +1,7 @@
 flowchart LR
   %% ===== LAYER 1: Client / Edge =====
   subgraph L1["Client / Edge Layer"]
-    User["Business user"]
-    GenUUI["GenU Web UI<br/>(CloudFront + S3)"]
-    User --> GenUUI
+    GenUWeb["GenU Web UI<br/>(Browser + CloudFront + S3)"]
   end
 
   %% ===== LAYER 2: Public RAG API (1つの窓口) =====
@@ -13,20 +11,21 @@ flowchart LR
     WAF -. "protects" .-> APIGW
   end
 
-  GenUUI -->|"HTTPS / JSON<br/>RAG request"| APIGW
+  GenUWeb -->|"HTTPS / JSON<br/>RAG request"| APIGW
 
-  %% ===== LAYER 3: RAG Backend (Lambda) =====
-  subgraph L3["RAG Backend (Lambda)"]
-    Orchestrator["Lambda: RAG Orchestrator<br/>(GenU backend)"]
+  %% ===== LAYER 3: LLM Gateway & Retrieval Backend =====
+  subgraph L3["LLM Gateway & Retrieval Backend (Lambda)"]
+    LLMGW["Lambda: LLM gateway<br/>(Guardrails + RAG orchestration + LLM invoke)"]
     Router["Lambda: retrieval router"]
     RetrieverKB["Lambda: RAG Retriever (KB)"]
     RetrieverKendra["Lambda: RAG Retriever (Kendra)"]
-    LLMGW["Lambda: LLM gateway<br/>(Guardrails + Bedrock Invoke)"]
 
-    APIGW --> Orchestrator
-    Orchestrator -->|"1. decide purpose<br/>2. build retrieval request"| Router
-    Router -->|"routing info"| RetrieverKB
-    Router -->|"routing info"| RetrieverKendra
+    APIGW -->|"invoke /rag/query"| LLMGW
+
+    %% LLM Gateway drives retrieval
+    LLMGW -->|"1. decide purpose<br/>2. build retrieval request"| Router
+    Router -->|"routing info (KB)"| RetrieverKB
+    Router -->|"routing info (Kendra)"| RetrieverKendra
   end
 
   %% ===== LAYER 4: Data Plane (RAG) =====
@@ -38,17 +37,19 @@ flowchart LR
     AOSS["AOSS Vector Collection"]
 
     Router -->|"read routing"| DDB
+
     RetrieverKB -->|"vector search"| KB --> AOSS
     RetrieverKendra -->|"full-text search"| Kendra
   end
 
-  %% Orchestrator gets results and calls LLM
-  RetrieverKB -->|"retrieved chunks"| Orchestrator
-  RetrieverKendra -->|"retrieved chunks"| Orchestrator
+  %% Retrieval results always go back to LLM Gateway
+  RetrieverKB -->|"retrieved chunks (KB)"| LLMGW
+  RetrieverKendra -->|"retrieved chunks (Kendra)"| LLMGW
 
-  Orchestrator -->|"question + retrieved context"| LLMGW
-  LLMGW -->|"final answer"| Orchestrator
-  Orchestrator -->|"HTTP response"| APIGW --> GenUUI
+  %% LLM Gateway does guardrail + LLM call
+  LLMGW -->|"question + retrieved context"| LLMGW_Inner["Guardrails + LLM invoke<br/>(Bedrock etc.)"]
+  LLMGW_Inner -->|"final answer"| LLMGW
+  LLMGW -->|"HTTP response"| APIGW --> GenUWeb
 
   %% ===== LAYER 5: Audit / Observability =====
   subgraph L5["Audit / Observability"]
