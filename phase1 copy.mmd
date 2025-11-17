@@ -1,73 +1,61 @@
 flowchart LR
-    %% ================================
-    %% LAYER 1: Client / Edge
-    %% ================================
-    subgraph L1[Client / Edge Layer]
-        Browser[Browser (GenU Web UI)]
-        CF[Amazon CloudFront]
-        S3Web[S3 Static Hosting (GenU Web)]
-        Browser -->|HTTPS| CF --> S3Web
-    end
+  %% ===== LAYER 1: Client / Edge =====
+  subgraph L1["Client / Edge Layer"]
+    Browser["Browser (GenU Web UI)"]
+    CF["Amazon CloudFront"]
+    S3Web["S3 Static Hosting (GenU Web)"]
+    Browser -->|HTTPS| CF --> S3Web
+  end
 
-    %% ================================
-    %% LAYER 2: API & Security
-    %% ================================
-    subgraph L2[API & Security Layer]
-        WAF[WAF WebACL]
-        APIGW[API Gateway (REST)\n - POST /llm/invoke\n - POST /retrieval/search]
-        WAF -. protects .-> APIGW
-    end
+  %% ===== LAYER 2: API & Security =====
+  subgraph L2["API & Security Layer"]
+    WAF["WAF WebACL"]
+    APIGW["API Gateway (REST)<br/>POST /retrieval/search<br/>POST /llm/invoke"]
+    WAF -. "protects" .-> APIGW
+  end
 
-    %% ================================
-    %% LAYER 3: Application Layer (Lambda)
-    %% ================================
-    subgraph L3[Application Layer (Lambda)]
-        LLMGW[Lambda: LLM Gateway\n(Guardrails + Bedrock Invoke)]
-        Router[Lambda: retrieval router]
-        RetrieverKB[Lambda: RAG Retriever (KB)]
-        RetrieverKendra[Lambda: RAG Retriever (Kendra)]
-        
-        Router -->|routing| RetrieverKB
-        Router -->|routing| RetrieverKendra
-    end
+  %% ===== LAYER 3: Application Layer (Lambda) =====
+  subgraph L3["Application Layer (Lambda)"]
+    LLMGW["Lambda: LLM gateway"]
+    Router["Lambda: retrieval router"]
+    RetrieverKB["Lambda: RAG Retriever (KB)"]
+    RetrieverKendra["Lambda: RAG Retriever (Kendra)"]
 
-    %% ================================
-    %% LAYER 4: Data Plane (RAG)
-    %% ================================
-    subgraph L4[Data Plane (RAG)]
-        DDB[(DynamoDB router table)]
-        S3Docs[(S3 doc bucket)]
-        KB[Bedrock Knowledge Base]
-        Kendra[(Amazon Kendra Index)]
-        AOSS[AOSS Vector Collection]
+    Router -->|routing| RetrieverKB
+    Router -->|routing| RetrieverKendra
+  end
 
-        RetrieverKB --> KB --> AOSS
-        RetrieverKendra --> Kendra
-        Router -->|read| DDB
-    end
+  %% ===== LAYER 4: Data Plane (RAG) =====
+  subgraph L4["Data Plane (RAG)"]
+    DDB["DynamoDB router table"]
+    S3Docs["S3 doc bucket"]
+    KB["Bedrock Knowledge Base"]
+    Kendra["Amazon Kendra Index"]
+    AOSS["AOSS Vector Collection"]
 
-    %% ================================
-    %% LAYER 5: Audit / Observability
-    %% ================================
-    subgraph L5[Audit / Observability]
-        FH_LLM[(Firehose: llm gateway)]
-        FH_RET[(Firehose: retrieval)]
-        S3Audit[(S3 audit bucket)]
-        Glue[(Glue tables)]
-        Athena[Athena WorkGroup]
-        CWDash[CloudWatch Dashboard]
+    RetrieverKB --> KB --> AOSS
+    RetrieverKendra --> Kendra
+    Router -->|read| DDB
+  end
 
-        FH_LLM --> S3Audit
-        FH_RET --> S3Audit
-        S3Audit --> Glue --> Athena
-        CWDash --- APIGW
-    end
+  %% ===== LAYER 5: Audit / Observability =====
+  subgraph L5["Audit / Observability"]
+    FH_LLM["Firehose: llm gateway"]
+    FH_RET["Firehose: retrieval"]
+    S3Audit["S3 audit bucket"]
+    Glue["Glue tables"]
+    Athena["Athena WorkGroup"]
+    CWDash["CloudWatch Dashboard"]
 
-    %% ================================
-    %% Cross-layer connections
-    %% ================================
-    Browser -->|HTTPS / JSON| APIGW
-    APIGW -->|POST /llm/invoke| LLMGW
-    APIGW -->|POST /retrieval/search| Router
-    LLMGW --> FH_LLM
-    Router --> FH_RET
+    FH_LLM --> S3Audit
+    FH_RET --> S3Audit
+    S3Audit --> Glue --> Athena
+    CWDash --- APIGW
+  end
+
+  %% ===== Cross-layer main flows =====
+  Browser -->|HTTPS / JSON| APIGW
+  APIGW -->|POST /llm/invoke| LLMGW
+  APIGW -->|POST /retrieval/search| Router
+  LLMGW --> FH_LLM
+  Router --> FH_RET
