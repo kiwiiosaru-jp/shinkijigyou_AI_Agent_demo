@@ -1,4 +1,4 @@
-flowchart LR
+flowchart TB
   %% ===== LAYER 1: Client / Edge =====
   subgraph L1["Client / Edge Layer"]
     GenUWeb["GenU Web UI<br/>(Browser + CloudFront + S3)"]
@@ -21,8 +21,6 @@ flowchart LR
     RetrieverKendra["Lambda: RAG Retriever (Kendra)"]
 
     APIGW -->|"invoke /rag/query"| LLMGW
-
-    %% LLM Gateway drives retrieval
     LLMGW -->|"1. decide purpose<br/>2. build retrieval request"| Router
     Router -->|"routing info (KB)"| RetrieverKB
     Router -->|"routing info (Kendra)"| RetrieverKendra
@@ -37,7 +35,6 @@ flowchart LR
     AOSS["AOSS Vector Collection"]
 
     Router -->|"read routing"| DDB
-
     RetrieverKB -->|"vector search"| KB --> AOSS
     RetrieverKendra -->|"full-text search"| Kendra
   end
@@ -51,7 +48,7 @@ flowchart LR
   LLMGW_Inner -->|"final answer"| LLMGW
   LLMGW -->|"HTTP response"| APIGW --> GenUWeb
 
-  %% ===== LAYER 5: Audit / Observability =====
+  %% ===== LAYER 5: Audit / Observability (一番下) =====
   subgraph L5["Audit / Observability"]
     FH_LLM["Firehose: llm gateway logs"]
     FH_RET["Firehose: retrieval logs"]
