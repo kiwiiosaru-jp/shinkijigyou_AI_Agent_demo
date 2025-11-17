@@ -1,0 +1,70 @@
+flowchart LR
+  %% ===== LAYER 1: Client / Edge =====
+  subgraph L1["Client / Edge Layer"]
+    GenUWeb["GenU Web UI<br/>(Browser + CloudFront + S3)"]
+  end
+
+  %% ===== LAYER 2: Public RAG API (1つの窓口) =====
+  subgraph L2["Public RAG API (API Gateway + WAF)"]
+    WAF["WAF WebACL"]
+    APIGW["API Gateway (REST)<br/>POST /rag/query"]
+    WAF -. "protects" .-> APIGW
+  end
+
+  GenUWeb -->|"HTTPS / JSON<br/>RAG request"| APIGW
+
+  %% ===== LAYER 3: LLM Gateway & Retrieval Backend =====
+  subgraph L3["LLM Gateway & Retrieval Backend (Lambda)"]
+    LLMGW["Lambda: LLM gateway<br/>(Guardrails + RAG orchestration + LLM invoke)"]
+    Router["Lambda: retrieval router"]
+    RetrieverKB["Lambda: RAG Retriever (KB)"]
+    RetrieverKendra["Lambda: RAG Retriever (Kendra)"]
+
+    APIGW -->|"invoke /rag/query"| LLMGW
+
+    %% LLM Gateway drives retrieval
+    LLMGW -->|"1. decide purpose<br/>2. build retrieval request"| Router
+    Router -->|"routing info (KB)"| RetrieverKB
+    Router -->|"routing info (Kendra)"| RetrieverKendra
+  end
+
+  %% ===== LAYER 4: Data Plane (RAG) =====
+  subgraph L4["Data Plane (RAG)"]
+    DDB["DynamoDB router table"]
+    S3Docs["S3 doc bucket"]
+    KB["Bedrock Knowledge Base"]
+    Kendra["Amazon Kendra Index"]
+    AOSS["AOSS Vector Collection"]
+
+    Router -->|"read routing"| DDB
+
+    RetrieverKB -->|"vector search"| KB --> AOSS
+    RetrieverKendra -->|"full-text search"| Kendra
+  end
+
+  %% Retrieval results always go back to LLM Gateway
+  RetrieverKB -->|"retrieved chunks (KB)"| LLMGW
+  RetrieverKendra -->|"retrieved chunks (Kendra)"| LLMGW
+
+  %% LLM Gateway does guardrail + LLM call
+  LLMGW -->|"question + retrieved context"| LLMGW_Inner["Guardrails + LLM invoke<br/>(Bedrock etc.)"]
+  LLMGW_Inner -->|"final answer"| LLMGW
+  LLMGW -->|"HTTP response"| APIGW --> GenUWeb
+
+  %% ===== LAYER 5: Audit / Observability =====
+  subgraph L5["Audit / Observability"]
+    FH_LLM["Firehose: llm gateway logs"]
+    FH_RET["Firehose: retrieval logs"]
+    S3Audit["S3 audit bucket"]
+    Glue["Glue tables"]
+    Athena["Athena WorkGroup"]
+    CWDash["CloudWatch Dashboard"]
+
+    LLMGW --> FH_LLM
+    Router --> FH_RET
+    FH_LLM --> S3Audit
+    FH_RET --> S3Audit
+    S3Audit --> Glue --> Athena
+    CWDash --- APIGW
+    CWDash --- LLMGW
+  end
