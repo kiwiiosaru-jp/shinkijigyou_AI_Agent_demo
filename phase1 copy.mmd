@@ -1,0 +1,80 @@
+flowchart TB
+  %% Clients / Edge
+  subgraph Client["Client / Edge"]
+    UI[Browser<br/>GenU Web UI]
+    CF[Amazon CloudFront]
+    S3UI[S3 Static Hosting<br/>GenU Web]
+  end
+
+  %% API & Security
+  subgraph API["API & Security (Routing / LLM Gateway)"]
+    WAF[WAF WebACL]
+    RET[/POST /retrieval/search/ <br/>API Gateway REST/]
+    LLM[/POST /llm/invoke/ <br/>API Gateway REST/]
+  end
+
+  %% Lambda Functions
+  subgraph Lambda["Application Layer (Lambda)"]
+    RouterFn[Lambda<br/>retrieval router]
+    AdapterKb[Lambda<br/>adapter_kb]
+    AdapterKendra[Lambda<br/>adapter_kendra]
+    LlmFn[Lambda<br/>llm gateway]
+  end
+
+  %% Data Plane
+  subgraph Data["Data Plane (RAG)"]
+    DDB[(DynamoDB<br/>router table)]
+    S3Docs[(S3 doc bucket)]
+    AOSS[(AOSS collection)]
+    KB[(Bedrock Knowledge Base)]
+    Kendra[(Amazon Kendra Index)]
+  end
+
+  %% Observability / Audit
+  subgraph Logs["Audit / Observability"]
+    FHRet[(Kinesis Firehose<br/>retrieval)]
+    FHLlm[(Kinesis Firehose<br/>llm gateway)]
+    S3Logs[(S3 audit bucket)]
+    Glue[(AWS Glue Tables)]
+    Athena[(Amazon Athena)]
+    CWDash[(CloudWatch Dashboard)]
+  end
+
+  %% Client / Edge flow
+  UI -->|HTTPS| CF --> S3UI
+  S3UI -->|HTTPS / JSON| RET
+  S3UI -->|HTTPS / JSON| LLM
+
+  %% WAF to APIs (association)
+  WAF -.-> RET
+  WAF -.-> LLM
+
+  %% API to Lambda
+  RET --> RouterFn
+  LLM --> LlmFn
+
+  %% Router & Adapters
+  RouterFn -->|read routing| DDB
+  RouterFn --> AdapterKb
+  RouterFn --> AdapterKendra
+  AdapterKb -->|retrieve| KB
+  KB -->|vector search| AOSS
+  AdapterKendra -->|search| Kendra
+
+  %% LLM Gateway & Guardrail
+  LlmFn -->|Guardrail & invoke| KB
+  %% (必要に応じてここに Bedrock LLM 本体を追加してもOK)
+
+  %% Logging / Audit flow
+  RouterFn --> FHRet
+  LlmFn --> FHLlm
+  FHRet --> S3Logs
+  FHLlm --> S3Logs
+  S3Logs --> Glue
+  Glue --> Athena
+
+  %% Dashboards
+  CWDash --- RET
+  CWDash --- LLM
+  CWDash --- RouterFn
+  CWDash --- LlmFn
