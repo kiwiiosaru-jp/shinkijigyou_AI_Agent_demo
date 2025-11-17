@@ -1,28 +1,32 @@
 flowchart LR
   %% ===== LAYER 1: Client / Edge =====
   subgraph L1["Client / Edge Layer"]
-    Browser["Browser (GenU Web UI)"]
-    CF["Amazon CloudFront"]
-    S3Web["S3 Static Hosting (GenU Web)"]
-    Browser -->|HTTPS| CF --> S3Web
+    User["Business user"]
+    GenUUI["GenU Web UI<br/>(CloudFront + S3)"]
+    User --> GenUUI
   end
 
-  %% ===== LAYER 2: API & Security =====
-  subgraph L2["API & Security Layer"]
+  %% ===== LAYER 2: Public RAG API (1つの窓口) =====
+  subgraph L2["Public RAG API (API Gateway + WAF)"]
     WAF["WAF WebACL"]
-    APIGW["API Gateway (REST)<br/>POST /retrieval/search<br/>POST /llm/invoke"]
+    APIGW["API Gateway (REST)<br/>POST /rag/query"]
     WAF -. "protects" .-> APIGW
   end
 
-  %% ===== LAYER 3: Application Layer (Lambda) =====
-  subgraph L3["Application Layer (Lambda)"]
-    LLMGW["Lambda: LLM gateway"]
+  GenUUI -->|"HTTPS / JSON<br/>RAG request"| APIGW
+
+  %% ===== LAYER 3: RAG Backend (Lambda) =====
+  subgraph L3["RAG Backend (Lambda)"]
+    Orchestrator["Lambda: RAG Orchestrator<br/>(GenU backend)"]
     Router["Lambda: retrieval router"]
     RetrieverKB["Lambda: RAG Retriever (KB)"]
     RetrieverKendra["Lambda: RAG Retriever (Kendra)"]
+    LLMGW["Lambda: LLM gateway<br/>(Guardrails + Bedrock Invoke)"]
 
-    Router -->|routing| RetrieverKB
-    Router -->|routing| RetrieverKendra
+    APIGW --> Orchestrator
+    Orchestrator -->|"1. decide purpose<br/>2. build retrieval request"| Router
+    Router -->|"routing info"| RetrieverKB
+    Router -->|"routing info"| RetrieverKendra
   end
 
   %% ===== LAYER 4: Data Plane (RAG) =====
@@ -33,29 +37,33 @@ flowchart LR
     Kendra["Amazon Kendra Index"]
     AOSS["AOSS Vector Collection"]
 
-    RetrieverKB --> KB --> AOSS
-    RetrieverKendra --> Kendra
-    Router -->|read| DDB
+    Router -->|"read routing"| DDB
+    RetrieverKB -->|"vector search"| KB --> AOSS
+    RetrieverKendra -->|"full-text search"| Kendra
   end
+
+  %% Orchestrator gets results and calls LLM
+  RetrieverKB -->|"retrieved chunks"| Orchestrator
+  RetrieverKendra -->|"retrieved chunks"| Orchestrator
+
+  Orchestrator -->|"question + retrieved context"| LLMGW
+  LLMGW -->|"final answer"| Orchestrator
+  Orchestrator -->|"HTTP response"| APIGW --> GenUUI
 
   %% ===== LAYER 5: Audit / Observability =====
   subgraph L5["Audit / Observability"]
-    FH_LLM["Firehose: llm gateway"]
-    FH_RET["Firehose: retrieval"]
+    FH_LLM["Firehose: llm gateway logs"]
+    FH_RET["Firehose: retrieval logs"]
     S3Audit["S3 audit bucket"]
     Glue["Glue tables"]
     Athena["Athena WorkGroup"]
     CWDash["CloudWatch Dashboard"]
 
+    LLMGW --> FH_LLM
+    Router --> FH_RET
     FH_LLM --> S3Audit
     FH_RET --> S3Audit
     S3Audit --> Glue --> Athena
     CWDash --- APIGW
+    CWDash --- LLMGW
   end
-
-  %% ===== Cross-layer main flows =====
-  Browser -->|HTTPS / JSON| APIGW
-  APIGW -->|POST /llm/invoke| LLMGW
-  APIGW -->|POST /retrieval/search| Router
-  LLMGW --> FH_LLM
-  Router --> FH_RET
