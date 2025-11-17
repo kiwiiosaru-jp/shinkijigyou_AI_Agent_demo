@@ -52,9 +52,9 @@ flowchart TB
   RouterFn -->|"read routing"| DDB
   RouterFn --> AdapterKb
   RouterFn --> AdapterKendra
-  AdapterKb -->|"retrieve"| KB
+  AdapterKb -->|"RAG Retriever (KB)"| KB
   KB -->|"vector search"| AOSS
-  AdapterKendra -->|"search"| Kendra
+  AdapterKendra -->|"RAG Retriever (Kendra)"| Kendra
 
   %% LLM Gateway
   LlmFn -->|"Guardrail & invoke"| KB
