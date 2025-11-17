@@ -1,11 +1,13 @@
-flowchart TB
-  %% ===== LAYER 1: Client / Edge =====
-  subgraph L1["Client / Edge Layer"]
+flowchart LR
+  %% ===== LAYER 1: Client / Edge (左端) =====
+  subgraph Client["Client / Edge Layer"]
+    direction TB
     GenUWeb["GenU Web UI<br/>(Browser + CloudFront + S3)"]
   end
 
-  %% ===== LAYER 2: Public RAG API (1つの窓口) =====
-  subgraph L2["Public RAG API (API Gateway + WAF)"]
+  %% ===== LAYER 2: Public RAG API =====
+  subgraph Api["Public RAG API (API Gateway + WAF)"]
+    direction TB
     WAF["WAF WebACL"]
     APIGW["API Gateway (REST)<br/>POST /rag/query"]
     WAF -. "protects" .-> APIGW
@@ -14,7 +16,8 @@ flowchart TB
   GenUWeb -->|"HTTPS / JSON<br/>RAG request"| APIGW
 
   %% ===== LAYER 3: LLM Gateway & Retrieval Backend =====
-  subgraph L3["LLM Gateway & Retrieval Backend (Lambda)"]
+  subgraph Core["LLM Gateway & Retrieval Backend (Lambda)"]
+    direction TB
     LLMGW["Lambda: LLM gateway<br/>(Guardrails + RAG orchestration + LLM invoke)"]
     Router["Lambda: retrieval router"]
     RetrieverKB["Lambda: RAG Retriever (KB)"]
@@ -27,7 +30,8 @@ flowchart TB
   end
 
   %% ===== LAYER 4: Data Plane (RAG) =====
-  subgraph L4["Data Plane (RAG)"]
+  subgraph Data["Data Plane (RAG)"]
+    direction TB
     DDB["DynamoDB router table"]
     S3Docs["S3 doc bucket"]
     KB["Bedrock Knowledge Base"]
@@ -39,17 +43,18 @@ flowchart TB
     RetrieverKendra -->|"full-text search"| Kendra
   end
 
-  %% Retrieval results always go back to LLM Gateway
+  %% Retrieval results → LLM Gateway
   RetrieverKB -->|"retrieved chunks (KB)"| LLMGW
   RetrieverKendra -->|"retrieved chunks (Kendra)"| LLMGW
 
   %% LLM Gateway does guardrail + LLM call
-  LLMGW -->|"question + retrieved context"| LLMGW_Inner["Guardrails + LLM invoke<br/>(Bedrock etc.)"]
-  LLMGW_Inner -->|"final answer"| LLMGW
+  LLMGW -->|"question + retrieved context"| Guardrails["Guardrails + LLM invoke<br/>(Bedrock etc.)"]
+  Guardrails -->|"final answer"| LLMGW
   LLMGW -->|"HTTP response"| APIGW --> GenUWeb
 
-  %% ===== LAYER 5: Audit / Observability (一番下) =====
-  subgraph L5["Audit / Observability"]
+  %% ===== LAYER 5: Audit / Observability（なるべく下側に） =====
+  subgraph Audit["Audit / Observability"]
+    direction TB
     FH_LLM["Firehose: llm gateway logs"]
     FH_RET["Firehose: retrieval logs"]
     S3Audit["S3 audit bucket"]
@@ -57,11 +62,13 @@ flowchart TB
     Athena["Athena WorkGroup"]
     CWDash["CloudWatch Dashboard"]
 
-    LLMGW --> FH_LLM
-    Router --> FH_RET
     FH_LLM --> S3Audit
     FH_RET --> S3Audit
     S3Audit --> Glue --> Athena
-    CWDash --- APIGW
-    CWDash --- LLMGW
   end
+
+  %% 監査レイヤへの接続（下方向を意図）
+  LLMGW --> FH_LLM
+  Router --> FH_RET
+  CWDash --- APIGW
+  CWDash --- LLMGW
