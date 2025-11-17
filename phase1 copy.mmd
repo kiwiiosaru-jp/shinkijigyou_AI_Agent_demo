@@ -16,8 +16,8 @@ flowchart TB
   %% Lambda Functions
   subgraph Lambda["Application Layer (Lambda)"]
     RouterFn[Lambda<br/>retrieval router]
-    AdapterKb[Lambda<br/>adapter_kb]
-    AdapterKendra[Lambda<br/>adapter_kendra]
+    AdapterKb[Lambda<br/>RAG Retriever (KB)]
+    AdapterKendra[Lambda<br/>RAG Retriever (Kendra)]
     LlmFn[Lambda<br/>llm gateway]
   end
 
@@ -63,7 +63,7 @@ flowchart TB
 
   %% LLM Gateway & Guardrail
   LlmFn -->|Guardrail & invoke| KB
-  %% (必要に応じてここに Bedrock LLM 本体を追加してもOK)
+  %% （必要ならここから Bedrock LLM 本体ノードを追加）
 
   %% Logging / Audit flow
   RouterFn --> FHRet
