@@ -62,8 +62,10 @@ flowchart LR
     MCPSrv[MCP sample servers<br/>AWS docs/CDK/Nova Canvas/time]
   end
 
-  U --> CF --> S3WEB
-  U -->|Auth| COG --> IDP
+  U --> CF
+  CF --> S3WEB
+  U -->|Auth| COG
+  COG --> IDP
   CF --> APIGW
   APIGW --> Lpred
   APIGW --> Lrag
@@ -76,7 +78,8 @@ flowchart LR
   Lpred -->|Cross-region| BR_USW2
   Lpred --> GR
   Lpred --> AC_USW2
-  Lpred --> MCPLambda --> MCPSrv
+  Lpred --> MCPLambda
+  MCPLambda --> MCPSrv
 
   %% KB path
   Lpred -->|KB Retrieve&Generate| KB
@@ -88,7 +91,7 @@ flowchart LR
   KDS --> Kendra
 
   %% Data ingest
-  U -->|Upload docs (future)| S3FILE
+  U -->|Upload docs| S3FILE
   U -->|KB docs| KBDS
   U -->|Kendra docs| KDS
 ```
