@@ -125,6 +125,34 @@ flowchart LR
   - CloudWatch Logs（Lambda/APIGW），CloudWatch Dashboard Stack（ap-northeast-1）
   - API/PredictStream のロググループ `/aws/lambda/GenerativeAiUseCasesStack-APIPredictStream44DDBC25-*`
 
+## 機能一覧（フルオプション構成を想定、今回デプロイ有無を備考に記載）
+| カテゴリ | 機能 | ステータス/備考 |
+| --- | --- | --- |
+| 認証/SSO | Cognito Hosted UI (UserPool) | 実装・稼働 |
+| 認証/SSO | SAML (Google/Entra 等) | 今回は未設定（省略）。IdP 設定後に `samlAuthEnabled=true` で再デプロイ可能 |
+| ネットワーク | 公開 CloudFront + API Gateway | 実装・稼働 |
+| ネットワーク | VPN/閉域 (closedNetworkMode) | 今回は無効（省略）。`closedNetworkMode=true` で VPC/Interface Endpoint を構築可 |
+| ネットワーク | WAF (IP/Country 制限) | 今回は未設定（省略）。`allowedIp*` を指定で us-east-1 WAF スタックがデプロイ |
+| モデル | Bedrock 東京: Claude 3.5 Sonnet v1, Nova Pro/Lite/Micro, Canvas/Reel/Sonic (AIP) | 実装・稼働 |
+| モデル | Bedrock us-east-1: Claude 3.7 Sonnet, Nova Premier | 実装・稼働 |
+| モデル | Bedrock us-west-2: DeepSeek R1 | 実装・稼働 |
+| モデル | SageMaker Endpoint (TGI 入口) | サンプルコメントのみ。実エンドポイント未接続 |
+| 画像/動画/音声 | Nova Canvas / Reel / Sonic (AIP 自動付与) | 実装・稼働 |
+| チャット (通常) | Bedrock Converse + Guardrail | 実装・稼働 |
+| RAG (Kendra) | S3 -> Kendra (ja) | 実装・稼働。サンプル `QuantumMesh.pdf` のみ |
+| RAG (Knowledge Base) | S3 -> Bedrock KB -> AOSS | 実装・稼働。サンプル `kagutan.pdf` のみ。暗黙/隠しフィルタ無効化済み |
+| RAG 高度オプション | Advanced Parsing / Binary Embedding / Rerank / Query Decomposition | 有効化済み |
+| Agent | WebSearch Agent (Brave) | 実装・稼働（API キー差し込み要） |
+| AgentCore | Generic Runtime / AgentBuilder Runtime (us-west-2) | 実装・稼働 |
+| Flow | Flow placeholder 1件 | 雛形のみ（ID 差し込み待ち） |
+| MCP | Lambda URL + サンプル MCP サーバー定義 | 実装済み（API キーは後入れ） |
+| ガードレール | Guardrails for Amazon Bedrock (PII Block, DRAFT) | 実装・稼働 |
+| モニタリング | CloudWatch Logs / Dashboard Stack | 実装・稼働 |
+| ダッシュボード | CloudWatch Dashboard | 実装・稼働 |
+| UI | CloudFront/S3 SPA, RAG(KB/Kendra)切替, Agent/Flow/MCP UI | 実装・稼働 |
+| アップロード | S3 File Bucket (将来のアップロード/生成物保管) | バケット作成済み、UI からのファイルアップロードは未使用 |
+| ドメイン | Cognito ドメイン `genu-demo` / カスタムドメインコメント | 実装（Cognito）。カスタムドメインはコメントのみ |
+
 ## 主なデータフロー
 1. **認証**: ブラウザ → CloudFront → Cognito Hosted UI → idToken 取得 → API 呼び出し時に使用。
 2. **通常チャット**: ブラウザ → APIGW → Lambda PredictStream → Bedrock (Converse) → Guardrail → 応答を SSE で返却。
