@@ -47,10 +47,10 @@ flowchart LR
   end
 
   subgraph Models
-    BR_APN1[Bedrock ap-northeast-1<br/>Claude 3.5 Sonnet v1<br/>Nova Pro/Lite/Micro<br/>Nova Canvas/Reel/Sonic (AIP)]
-    BR_USE1[Bedrock us-east-1<br/>Claude 3.7 Sonnet<br/>Nova Premier]
-    BR_USW2[Bedrock us-west-2<br/>DeepSeek R1]
-    GR[Guardrail 87xulvzb1pln DRAFT]
+    BR_APN1["Bedrock ap-northeast-1\nClaude 3.5 Sonnet v1\nNova Pro/Lite/Micro\nNova Canvas/Reel/Sonic (AIP)"]
+    BR_USE1["Bedrock us-east-1\nClaude 3.7 Sonnet\nNova Premier"]
+    BR_USW2["Bedrock us-west-2\nDeepSeek R1"]
+    GR["Guardrail 87xulvzb1pln DRAFT"]
   end
 
   subgraph AgentCore
