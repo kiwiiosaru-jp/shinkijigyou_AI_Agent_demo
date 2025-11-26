@@ -43,6 +43,7 @@
 | ネットワーク構成 | ALB+Fargate経由 | ×（CF+S3+APIGW+Lambda） | 基盤初期はサーバレス（P1）。規模/負荷拡大や社内基準で必要になれば Fargate/ALB へ切替（P2以降）。 | P2 | 20–25 |
 | RAG KB（既定） | ベクトルDB=PostgreSQL指定 | △（Bedrock KB+AOSS） | Aurora pgvectorを追加オプション。KB/AOSSは既定高速ルート | P1(片側) / P2(両対応) | 25–30 |
 | RAG Kendra | Kendra利用 | △（標準機能） | 必須でなければスコープ外。要なら維持 | P1/Optional | 0–10 |
+| OCR/表構造保持 | スキャンPDFや表を構造保持したい | ×（KB/Kendra標準は平坦化。KBはOCRなし） | Textract等でOCR＋テーブル抽出→HTML/Markdown/CSV化して S3/Document API 経由で投入（KB=前処理、Kendra= CDE/Document API）。表を平坦化でよければ追加不要 | P1（最小OCR）/P2（精度調整） | 12–18 |
 | Boxパイプライン | Box起点、前処理/メタ付与、スケジュール/通知 | × | Box SDK/Webhook＋Step Functions/Batch/Lambda、メタ付与可 | P1(最小) / P2(差分・Webhook) | 30–40 |
 | Box→pgvector | Boxアダプタ無し | × | API連携実装（Box API → S3 → 前処理 → pgvector） | P1 | 12–18 |
 | 前処理カスタム | Python差込・標準ロジック置換 | △（サンプル最小） | 前処理ステップをモジュール化し差替え可能に設計 | P1 | 10–15 |
@@ -71,6 +72,7 @@
 ## 6. メモ・補足
 - Kendra: RFPに明示なし。不要なら外し、KB/pgvectorに一本化。  
 - Box: Kendra向けアダプタはあるが、pgvectorルートは自前API実装が必要。  
+- Textract: Azure Document Intelligence 相当。スキャンPDF/OCR/表抽出が必要な場合は前処理で利用し、HTML/Markdown/CSVに整形して KB/Kendra へ投入。  
 - オートスケール/可用性:  
   - フロント/静的: CF+S3（サーバレス）。Fargate採用時はタスク/ターゲット数でスケール。  
   - API/Lambda: Concurrency・Retry・タイムアウト調整。APIGWスロット設定。  
