@@ -39,7 +39,7 @@
 | 認証・SSO | Entra SAML | ◯ | IdP統合・ドメイン設定・テスト強化 | P1 | 8–12 |
 | API/ガバナンス | 全社標準APIを義務化 | △（ゲートウェイはあるが標準化前提なし） | API利用必須の方針化、API仕様書/SDKを整備 | P1 | 5–8 |
 | ネットワーク/セキュリティ | WAF/PrivateLink/多層監視 | △（WAF無効、パブリックCF+APIGW） | WAF追加、VPC+PrivateLink/Lambda内向き、SecurityHub/GuardDuty/Config統合 | P2 | 20–25 |
-| ネットワーク構成 | ALB+Fargate経由 | ×（CF+S3+APIGW+Lambda） | 必須なら Fargate/ALB に切替。不要なら現行サーバレス提案 | P2 | 20–25 |
+| ネットワーク構成 | ALB+Fargate経由 | ×（CF+S3+APIGW+Lambda） | 基盤初期はサーバレス（P1）。規模/負荷拡大や社内基準で必要になれば Fargate/ALB へ切替（P2以降）。 | P2 | 20–25 |
 | RAG KB（既定） | ベクトルDB=PostgreSQL指定 | △（Bedrock KB+AOSS） | Aurora pgvectorを追加オプション。KB/AOSSは既定高速ルート | P1(片側) / P2(両対応) | 25–30 |
 | RAG Kendra | Kendra利用 | △（標準機能） | 必須でなければスコープ外。要なら維持 | P1/Optional | 0–10 |
 | Boxパイプライン | Box起点、前処理/メタ付与、スケジュール/通知 | × | Box SDK/Webhook＋Step Functions/Batch/Lambda、メタ付与可 | P1(最小) / P2(差分・Webhook) | 30–40 |
@@ -53,6 +53,7 @@
 | 性能 | 応答10–60秒 | ◯（要チューニング） | モデル/チャンク上限、同時実行、キャッシュ調整 | P1 | 5–8 |
 | 可用性 | RPO24h/RTO12h、稼働率99.7% | △ | DDB PITR、Aurora バックアップ/マルチAZ、Runbook/DR手順 | P1/P2 | 8–12 |
 | 監視 | トークン/ファイル/異常検知 | △ | Dashboard項目追加、アラート調整 | P1 | 6–8 |
+| オートスケール/性能・可用性 | サーバレス（P1）→ Fargate/ALB（P2以降オプション） | △ | 初期はサーバレスでコールドスタート以外は自動スケール。規模拡大・社内基準・レイテンシ要件で常時起動/細粒度制御が必要なら Fargate/ALB を採用 | P1（サーバレス）/P2（Fargate候補） | 10–15 |
 
 ## 5. 工数目安（概算・人日、実装中心／ざっくりご参考の工数です。AWSアーキテクトに見ていただいた方がいいかも）
 - フェーズ1: **60–80人日**  
