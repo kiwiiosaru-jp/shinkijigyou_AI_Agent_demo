@@ -9,13 +9,13 @@
 ## 2. エグゼクティブサマリ
 - GenUフルオプションを核に、**共通LLMゲートウェイ/APIを全社標準インターフェース**として提示し、以降のアプリはこのAPIを利用するガバナンスモデルを採用。
 - **3か月MVPで実装すべき最小スコープ**: 認証（Entra SAML）、共通API（LLM/RAG）、Box取込パイプライン最小版、RAG検索（KB/AOSS or Aurora pgvectorのどちらかを優先選択）、監視/バックアップ基礎、AgentCore組込み、**最小メタ付与（部門/権限などアクセス制御に必要なメタのみ）**。
-- **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、セキュリティ強化（WAF/PrivateLink/GuardDuty/Security Hub）、オートスケール/性能・可用性設計の細分化、Fargate/ALBが必要ならここで切替。
+- **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、検索UI拡張（スコア/履歴/類似検索等）、Fargate/ALBへの移行を必要に応じて実施。セキュリティ/監査/閉域はPh1で実装。
 - **リスク/ギャップ**: Box連携（pgvector側はAPI実装が必要）、PostgreSQLベクトル指定、ALB+Fargate要求、管理UI拡張。いずれも追加開発で吸収可。
 - **RFPアーキ準拠の段階移行**: フェーズ1は GenU標準（APIGW+Lambda+CF/S3静的）でフロント＆バックを最短立ち上げ、フェーズ2でフロントのみ ALB+Fargate へ移行しつつ、API は APIGW+Lambda を継続利用して RFP 図の「フロント=ALB/Fargate・バック=APIGW/Lambda」を実現。
 
 ## 3. 段階開発プラン
 - **フェーズ1（～3か月、MVP）**  
-  - フロント/バック: GenU標準の CloudFront+S3（静的SPA）＋ API Gateway + Lambda。追加インフラを最小にして短期立ち上げ。  
+  - フロント/バック: GenU標準の CloudFront+S3（静的SPA）＋ API Gateway + Lambda をベースに、VPC 内にバックエンドを配置（RFPの閉域前提）。  
   - 認証: Entra SAML + Cognito。  
   - 共通API/ゲートウェイ: LLM/RAG/AgentCore を API Gateway + Lambda で提供し、社内アプリはこのAPI利用を必須化。  
   - RAG: KB（Bedrock KB/AOSS 既定）または Aurora pgvector のどちらかを優先採用（両対応も可だが期間タイトなら片側）。  
@@ -32,7 +32,6 @@
   - Box Webhook/差分取込、メタ拡張（要約/タグ/Q&A 等精度向上系）、部門別アクセス制御/容量管理の強化（Ph1で付与したメタを活用し UI/運用へ拡張）。  
   - 管理UI拡張: システム管理者向けカスタムUI（ダッシュボード/利用状況/ログ閲覧/お知らせ配信）、部門管理者向けUI（部門ダッシュボード、文書/アクセス権限管理、検索エクスポート、アップロード/インデックス管理）。  
   - 検索UI拡張（Want系の追加開発）: 関連性スコア表示、類似検索提案、検索履歴表示、フィードバックコメント入力/保存を段階的に追加。  
-  - セキュリティ強化（WAF、PrivateLink/VPC内化、GuardDuty/SecurityHub/Config統合）。  
   - オートスケール調整: フロント（CF/Lambda@Edge or Fargate）、バック/API、LLM呼び出し同時実行、RAG（KB/Kendra or pgvector）、ベクトルDBのスロット/キャパ。  
   - Fargate/ALB構成が必須ならここで切替。
   - 移行効果: インフラ強化は主にフロント差し替えで済み、RAG/LLMのコア実装への影響を最小化。  
@@ -48,9 +47,9 @@
 | 認証・SSO | Entra SAML | ◯ | IdP統合、ドメイン設定、E2Eテスト | P1 | 8–12 |
 | API/ガバナンス | 全社標準API | △ | API必須化、仕様/SDK、ガードレール適用 | P1 | 5–8 |
 | 文書管理ガバナンス | 承認/棚卸/LC | △ | 承認WF・棚卸し・ライフサイクル管理を追加 | P3 | 10–15 |
-| ネットワーク/セキュリティ | WAF/Shield/監査 | △ | P1最小、P2でWAF/Shield/CloudTrail/Config/Inspector | P2 | 20–25 |
-| ネットワーク構成（フロント） | ALB+Fargate | × | P1 CF+S3+APIGW+Lambda、P2 Fargate+ALB | P1/P2 | 20–25 |
-| オンプレ接続 | TGW+VPN | × | P1はパブリックで最小PoCを公開しユーザが触れる状態を確保（認証はCognito/Entraで実施）。P2で Site-to-Site VPN＋TGW を構成し社内ネットワーク経由に切替。閉域要件が強い場合は PrivateLink も検討 | P2 | 10–15 |
+| ネットワーク/セキュリティ | WAF/Shield/監査 | △ | P1でWAF/Shield/CloudTrail/Config/Inspectorを有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールと監査ログを整備 | P1 | 20–25 |
+| ネットワーク構成（フロント） | ALB+Fargate | × | P1 CF+S3+APIGW+Lambda（バックはVPC内）で立ち上げ、同一VPCで Fargate+ALB へ切替可能な設計とする | P1 | 20–25 |
+| オンプレ接続 | TGW+VPN | × | P1から Site-to-Site VPN＋TGW を構成し社内ネットワーク経由で利用（必要に応じ PrivateLink も併用） | P1 | 10–15 |
 | RAG KB（既定） | PostgreSQL指定 | △ | KB/AOSS既定＋Aurora pgvectorオプション | P1/P2 | 25–30 |
 | RAG Kendra | Kendra利用 | △ | 任意で維持/不使用 | P1/Opt | 0–10 |
 | OCR/表構造保持 | OCR+表保持 | × | Textractで画像/スキャンPDFをテキスト化し、表はHTML/MD/CSVとしてメタ付きでS3へ投入。KB標準に任せず前処理で精度を担保 | P1/P2 | 12–18 |
@@ -59,20 +58,20 @@
 | データクレンジング/正規化 | ヘッダ削除・正規化 | × | P2前処理でヘッダ/フッタ・特殊記号/HTMLタグを除去し、全角半角・日付フォーマットを正規化 | P2 | 8–12 |
 | 辞書補正/ゆらぎ補正 | ISUZU→いすゞ等 | × | P2前処理で辞書/表記ゆらぎを補正（社内用語辞書を管理し適用） | P2 | 6–8 |
 | Q&A変換・要約タグ付与 | FAQ化/タグ付与 | × | P3 LLMバッチでマニュアル等をQ&A化し、タグ/要約を生成してメタとして付与 | P3 | 12–18 |
-| 連続性/RPO/RTO | RPO1日/RTO12h目安 | △ | P1: DDB PITR(35日)、Aurora/pgvector日次スナップショット＋リストアRunbook、S3版管理。P2: 復旧演習とRTO測定、RPO/RTOを監視に組込み | P1/P2 | 8–12 |
-| 稼働率/多AZ | 99.7% | △ | P1: サーバレス冗長(λ/APIGW/CF)、Aurora Multi-AZ。P2: SLAモニタと冗長化確認、障害対応Runbook整備 | P1/P2 | 6–8 |
-| バックアップ保持/復旧演習 | DynamoDB/pgvector保持 | × | P1: DynamoDB PITR35日、Aurora日次スナップショット(保持30日)、復旧手順整備。P2: 復旧演習と検証ログを残す | P1/P2 | 8–12 |
-| 管理ダッシュボード/利用状況/ログ | 利用/エラー/エクスポート | × | P1はAWSコンソール(CW Dashboards/Logs Insights/Athena+S3/CloudTrail)で提供し即時可視化。P2で非AWSユーザ向けにカスタム管理UIを実装し、利用状況・エラー・エクスポートをワンクリック化 | P1/P2 | 12–18 |
+| 連続性/RPO/RTO | RPO1日/RTO12h目安 | △ | P1: DDB PITR(35日)、Aurora/pgvector日次スナップショット＋リストアRunbook、S3版管理、復旧演習まで実施しRPO/RTOを監視に組込み | P1 | 8–12 |
+| 稼働率/多AZ | 99.7% | △ | P1: サーバレス冗長(λ/APIGW/CF)、Aurora Multi-AZ を前提にSLAモニタと障害対応Runbookを用意 | P1 | 6–8 |
+| バックアップ保持/復旧演習 | DynamoDB/pgvector保持 | × | P1: DynamoDB PITR35日、Aurora日次スナップショット(保持30日)、復旧手順整備と演習を実施 | P1 | 8–12 |
+| 管理ダッシュボード/利用状況/ログ | 利用/エラー/エクスポート | × | P1はAWSコンソール(CW Dashboards/Logs Insights/Athena+S3/CloudTrail)を整備し即時可視化。P2で非AWSユーザ向けにカスタム管理UIを実装し、利用状況・エラー・エクスポートをワンクリック化 | P1/P2 | 12–18 |
 | ユーザ管理（全体） | 一覧/ロール/停止 | △ | P1 Cognito/Entraコンソール、P2 必要に応じUI化 | P1/P2 | 5–8 |
 | ベクトルDB管理 | 容量/最適化/バックアップ | × | P1は Aurora/KB/AOSS コンソール＋SQL/スナップショットで運用。P2でRunbook自動化やカスタムUIを追加し最適化/バックアップ操作を簡素化 | P1/P2 | 10–15 |
 | 参照元表示/リンク | 出典/直リンク/ページ | △ | P1で出典情報（ドキュメント名/パス/ページ番号/直リンク）をUIに明示し、検証しやすくする | P1 | 6–10 |
 | 検索結果プレビュー | チャンク確認 | △ | P1で取得チャンクの抜粋をプレビュー表示し、文脈を確認できるようにする | P1 | 4–6 |
-| 関連性スコア表示 | スコア表示 | × | P2でバックエンドのスコアをUIに数値表示し、根拠の強弱を把握可能にする | P2 | 4–6 |
+| 関連性スコア表示 | スコア表示 | × | P1でバックエンドのスコアをUIに数値表示し、根拠の強弱を把握可能にする | P1 | 4–6 |
 | フィルター機能 | 日付/メタ絞り込み | △ | P1で既存メタ（department/access_level等）を有効化。日付/タグなど追加メタが必要ならP2でUIとAPIを拡張 | P1/P2 | 6–10 |
 | 類似検索提案 | 履歴ベクトル検索 | × | P2で検索履歴をベクトル化し類似クエリを提示、ナビゲーションを改善 | P2 | 8–12 |
 | 検索履歴表示 | 履歴一覧/再検索 | × | P2で履歴一覧とワンクリック再検索を提供 | P2 | 6–10 |
 | 回答評価 | いいね等 | × | P1でいいね/バッドを保存し、モデル/プロンプト調整のフィードバックに活用 | P1 | 6–10 |
-| フィードバックコメント | 精度/性能FB | × | P3で自由入力のフィードバック欄を追加（DDB保存や外部フォームリンク） | P3 | 6–10 |
+| フィードバックコメント | 精度/性能FB | × | P1で自由入力のフィードバック欄を追加（DDB保存や外部フォームリンク） | P1 | 6–10 |
 | 部門ユーザ管理 | 部門ユーザ/権限/容量 | × | P1で部門管理者向け最小UIを提供（部門別ユーザ一覧/追加/削除/権限付与、設定はDDBで保持） | P1 | 12–18 |
 | 部門管理 | 部門作成/編集/容量 | × | P2 部門管理UI（DDB/Parameter Store） | P2 | 10–15 |
 | お知らせ管理 | 障害/告知配信 | × | P2 通知UI＋SNS/メール/バナー配信 | P2 | 8–12 |
@@ -93,16 +92,16 @@
 | メタ付与/Q&A | 要約/タグ/Q&A | △ | 前処理に生成系ジョブ追加 | P2 | 12–18 |
 | オートスケール | 要素別スケール | △ | 各コンポーネントの同時実行/スロット調整 | P2 | 10–15 |
 | 性能 | 応答10–60秒 | ◯ | モデル選定/チャンク抑制/同時実行/キャッシュ | P1 | 5–8 |
-| 可用性 | RPO24h/RTO12h | △ | DDB PITR、Auroraバックアップ/MAZ、Runbook | P1/P2 | 8–12 |
+| 可用性 | RPO24h/RTO12h | △ | DDB PITR、Auroraバックアップ/MAZ、Runbook | P1 | 8–12 |
 | 監視 | トークン/ファイル/異常検知 | △ | Dashboards/Athena/アラート調整 | P1 | 6–8 |
 | オートスケール/性能・可用性 | サーバレス→Fargate候補 | △ | P1サーバレス、必要ならP2 Fargate常時起動 | P1/P2 | 10–15 |
-| RAG精度モニタ/評価 | 精度チェック | × | P2で評価用データセットと指標(EM/F1/HitRate等)を用意し、定期精度チェックを自動化。P3でチューニングループ（リランク/前処理調整）に接続 | P2/P3 | 8–12 |
-| 暗号化/鍵管理 | 暗号化/秘匿 | △ | P1: S3/KMS、Aurora/DynamoDB暗号化、TLS終端。P2: KMS CMK運用(キー分離/ローテ)、ベクトルデータの保存時暗号化と転送時TLS確認 | P1/P2 | 6–10 |
-| 監査/ログ | CloudTrail/CWL/Config | △ | P1: CloudTrail全リージョン/Org、APIGW/Lambda/Bedrock/KB/Kendraのログ出力、Configルール。P2: Athena/Security Lakeで横断分析、保存期間を要件に合わせ延長 | P1/P2 | 8–12 |
-| 脅威検知/セキュリティ運用 | GuardDuty/SecurityHub/Inspector | × | P1: GuardDuty有効化、基本アラート連携。P2: SecurityHub統合＋Inspector（ECR/Fargate適用時）、運用Runbook整備 | P1/P2 | 8–12 |
-| WAF/Shield | DDoS/入力検査 | △ | P1は未適用（最小構成）。P2で WAF/Shield を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールを適用 | P2 | 8–12 |
-| PrivateLink/VPC Endpoints | 安全なサービス間通信 | × | P2で PrivateLink/VPCエンドポイントを必要箇所に適用し、閉域経路を構成 | P2 | 6–10 |
-| テスト/検証 | 負荷・侵入テスト | × | P1は最小の機能テストのみ。P2で負荷テスト/セキュリティ診断（Inspector等）を実施し、RPO/RTO/スロットリングの実測を取得 | P1/P2 | 8–12 |
+| RAG精度モニタ/評価 | 精度チェック | × | P1で評価データセットと指標(EM/F1/HitRate等)を用意し、定期精度チェックを自動化。リランク/前処理調整のチューニングループに接続 | P1 | 8–12 |
+| 暗号化/鍵管理 | 暗号化/秘匿 | △ | P1: S3/KMS、Aurora/DynamoDB暗号化、TLS終端、CMK運用(キー分離/ローテ)、ベクトルデータの保存時暗号化と転送時TLS確認まで実施 | P1 | 6–10 |
+| 監査/ログ | CloudTrail/CWL/Config | △ | P1: CloudTrail全リージョン/Org、APIGW/Lambda/Bedrock/KB/Kendraのログ出力、Configルール、Athena/Security Lakeで横断分析、保存期間も要件に合わせ設定 | P1 | 8–12 |
+| 脅威検知/セキュリティ運用 | GuardDuty/SecurityHub/Inspector | × | P1: GuardDuty有効化と基本アラート連携、SecurityHub統合、Inspector（ECR/Fargate適用時含む）を有効化し、運用Runbookも整備 | P1 | 8–12 |
+| WAF/Shield | DDoS/入力検査 | △ | P1で WAF/Shield を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールを適用 | P1 | 8–12 |
+| PrivateLink/VPC Endpoints | 安全なサービス間通信 | × | P1で PrivateLink/VPCエンドポイントを必要箇所に適用し、閉域経路を構成 | P1 | 6–10 |
+| テスト/検証 | 負荷・侵入テスト | × | P1で負荷テスト/セキュリティ診断（Inspector等）を実施し、RPO/RTO/スロットリングの実測を取得 | P1 | 8–12 |
 
 ## 5. 工数目安（概算・人日、実装中心／ざっくりご参考の工数です。AWSアーキテクトに見ていただいた方がいいかも）
 - フェーズ1: **60–80人日**  
@@ -115,9 +114,8 @@
 ※要件定義・テスト・PMは別途。スコープに応じ前後します。
 
 ## 6. メモ・補足
-- RFP図のフロントは ALB+Fargate。フェーズ1は GenU 標準（CF+S3+APIGW+Lambda）で立ち上げ、フェーズ2でフロントのみ Fargate+ALB に差し替え、API は APIGW+Lambda を継続。  
-- RFP図は Site-to-Site VPN + Transit Gateway 前提。フェーズ2で閉域接続を追加（フェーズ1はパブリックで PoC）。  
-- VPC/閉域の段階開発合理性: Ph1をパブリック最小構成で最短PoC（Cognito/Entra認証前提）とし、LLM/RAG精度・UX確認を先行。NW/セキュリティ部門とのCIDR/ルート/PrivateLink/WAF設計やVPN/TGW疎通検証は重く時間がかかるため並行で進め、Ph2で閉域化＋ALB/Fargate移行をまとめて実施することでリードタイムとリスクを分離。閉域必須の場合はPh1からVPN/TGW構築に着手。  
+- RFP図のフロントは ALB+Fargate。フェーズ1は GenU 標準（CF+S3+APIGW+Lambda）かつVPC内で立ち上げ、必要に応じ同一VPCで Fargate+ALB に差し替え。API は APIGW+Lambda を継続。  
+- RFP図は Site-to-Site VPN + Transit Gateway 前提。フェーズ1から VPN/TGW/PrivateLink を構成し、閉域接続で提供。  
 - Kendra: RFPに明示なし。不要なら外し、KB/pgvectorに一本化。  
 - Box: Kendra向けアダプタはあるが、pgvectorルートは自前API実装が必要。  
 - Textract: Azure Document Intelligence 相当。スキャンPDF/OCR/表抽出が必要な場合は前処理で利用し、HTML/Markdown/CSVに整形して KB/Kendra へ投入。  
