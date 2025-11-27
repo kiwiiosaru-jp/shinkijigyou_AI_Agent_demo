@@ -45,12 +45,14 @@
 | 項目 | RFP | 現状 | 方針 | Phase | 人日 |
 | --- | --- | --- | --- | --- | --- |
 | 認証・SSO | Entra SAML | × | IdP統合、ドメイン設定、E2Eテストを新規実装（GenU標準は未設定） | P1 | 8–12 |
-| API/ガバナンス | 全社標準API | × | API必須化、仕様/SDK、ガードレール適用を追加実装 | P1 | 5–8 |
+| API基盤 | APIGW+Lambda | ◯ | GenU標準のAPI基盤を利用 | P1 | 0 |
+| API/ガバナンス | 全社標準API | × | API必須化、仕様/SDK提供、ガードレール適用を運用ルールとして追加実装 | P1 | 5–8 |
 | 文書管理ガバナンス | 承認/棚卸/LC | × | 承認WF・棚卸し・ライフサイクル管理を新規実装 | P3 | 10–15 |
-| ネットワーク/セキュリティ | WAF/Shield/監査 | × | P1でWAF/Shield/CloudTrail/Config/Inspectorを有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールと監査ログを整備 | P1 | 20–25 |
+| ネットワーク/セキュリティ | WAF/Shield/監査 | ◯ | パラメータ設定で WAF/Shield/CloudTrail/Config/Inspector を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールと監査ログを整備 | P1 | 8–12 |
 | ネットワーク構成（フロント） | ALB+Fargate | × | P1 CF+S3+APIGW+Lambda（バックはVPC内）で立ち上げ、同一VPCで Fargate+ALB へ切替可能な設計とする | P1 | 20–25 |
 | オンプレ接続 | TGW+VPN | × | P1から Site-to-Site VPN＋TGW を構成し社内ネットワーク経由で利用（必要に応じ PrivateLink も併用） | P1 | 10–15 |
-| RAG KB（既定） | PostgreSQL指定 | ◯ | GenU標準のBedrock KB/AOSSを活用し、必要ならAurora pgvectorを追加（P1で準備） | P1 | 25–30 |
+| RAG KB（AOSS） | Bedrock KB/AOSS | ◯ | GenU標準のBedrock KB + AOSSをそのまま活用 | P1 | 0 |
+| RAG（pgvector） | PostgreSQL(Aurora pgvector) | × | Lambda/API をpgvector用に新規実装し、メタ/検索/埋め込み/リランク対応を追加 | P1 | 25–30 |
 | RAG Kendra | Kendra利用 | ◯ | GenU標準のKendra連携を有効化（不要なら無効化も可） | P1/Opt | 0–10 |
 | OCR/表構造保持 | OCR+表保持 | × | Textractで画像/スキャンPDFをテキスト化し、表はHTML/MD/CSVとしてメタ付きでS3へ投入。KB標準に任せず前処理で精度を担保 | P1 | 12–18 |
 | PDF大容量/分割 | 50MB超や長文PDF | × | P1で分割設定と自動分割バッチ/ツールを用意し、大容量PDFを安全にインジェスト | P1 | 6–8 |
@@ -58,16 +60,16 @@
 | データクレンジング/正規化 | ヘッダ削除・正規化 | × | P2前処理でヘッダ/フッタ・特殊記号/HTMLタグを除去し、全角半角・日付フォーマットを正規化 | P2 | 8–12 |
 | 辞書補正/ゆらぎ補正 | ISUZU→いすゞ等 | × | P2前処理で辞書/表記ゆらぎを補正（社内用語辞書を管理し適用） | P2 | 6–8 |
 | Q&A変換・要約タグ付与 | FAQ化/タグ付与 | × | P3 LLMバッチでマニュアル等をQ&A化し、タグ/要約を生成してメタとして付与 | P3 | 12–18 |
-| 連続性/RPO/RTO | RPO1日/RTO12h目安 | × | P1: DDB PITR(35日)、Aurora/pgvector日次スナップショット＋リストアRunbook、S3版管理、復旧演習まで実施しRPO/RTOを監視に組込み | P1 | 8–12 |
-| 稼働率/多AZ | 99.7% | × | P1: サーバレス冗長(λ/APIGW/CF)、Aurora Multi-AZ を前提にSLAモニタと障害対応Runbookを用意 | P1 | 6–8 |
-| バックアップ保持/復旧演習 | DynamoDB/pgvector保持 | × | P1: DynamoDB PITR35日、Aurora日次スナップショット(保持30日)、復旧手順整備と演習を実施 | P1 | 8–12 |
+| 連続性/RPO/RTO | RPO1日/RTO12h目安 | × | P1: DDB PITR(35日)、Aurora/pgvector日次スナップショット＋リストアRunbook、S3版管理、復旧演習まで実施しRPO/RTOを監視に組込み | P1 | 12–18 |
+| 稼働率/多AZ | 99.7% | × | P1: サーバレス冗長(λ/APIGW/CF)、Aurora Multi-AZ を前提にSLAモニタと障害対応Runbookを用意 | P1 | 8–12 |
+| バックアップ保持/復旧演習 | DynamoDB/pgvector保持 | × | P1: DynamoDB PITR35日、Aurora日次スナップショット(保持30日)、復旧手順整備と演習を実施 | P1 | 10–14 |
 | 管理ダッシュボード/利用状況/ログ | 利用/エラー/エクスポート | × | P1はAWSコンソール(CW Dashboards/Logs Insights/Athena+S3/CloudTrail)を整備し即時可視化。後続で非AWSユーザ向けにカスタム管理UIを追加 | P1 | 12–18 |
 | ユーザ管理（全体） | 一覧/ロール/停止 | × | P1 Cognito/Entraコンソールで運用し、必要に応じUI化 | P1 | 5–8 |
 | ベクトルDB管理 | 容量/最適化/バックアップ | × | P1は Aurora/KB/AOSS コンソール＋SQL/スナップショットで運用し、Runbook/自動化もセットで整備 | P1 | 10–15 |
-| 参照元表示/リンク | 出典/直リンク/ページ | × | P1で出典情報（ドキュメント名/パス/ページ番号/直リンク）をUIに明示し、検証しやすくする | P1 | 6–10 |
-| 検索結果プレビュー | チャンク確認 | × | P1で取得チャンクの抜粋をプレビュー表示し、文脈を確認できるようにする | P1 | 4–6 |
+| 参照元表示/リンク | 出典/直リンク/ページ | ◯ | GenU標準UIの出典表示を有効化（ドキュメント名/パス/ページ番号/直リンク） | P1 | 0 |
+| 検索結果プレビュー | チャンク確認 | ◯ | GenU標準の抜粋/プレビュー表示を利用 | P1 | 0 |
 | 関連性スコア表示 | スコア表示 | × | P1でバックエンドのスコアをUIに数値表示し、根拠の強弱を把握可能にする | P1 | 4–6 |
-| フィルター機能 | 日付/メタ絞り込み | × | P1で既存メタ（department/access_level等）を有効化。日付/タグなど追加メタが必要なら後続でUIとAPIを拡張 | P1 | 6–10 |
+| フィルター機能 | 日付/メタ絞り込み | ◯ | GenU標準のメタフィルタを有効化（department/access_level等）。追加メタが必要なら後続で拡張 | P1 | 0 |
 | 類似検索提案 | 履歴ベクトル検索 | × | P2で検索履歴をベクトル化し類似クエリを提示、ナビゲーションを改善 | P2 | 8–12 |
 | 検索履歴表示 | 履歴一覧/再検索 | × | P2で履歴一覧とワンクリック再検索を提供 | P2 | 6–10 |
 | 回答評価 | いいね等 | × | P1でいいね/バッドを保存し、モデル/プロンプト調整のフィードバックに活用 | P1 | 6–10 |
@@ -94,18 +96,18 @@
 | オートスケール | 要素別スケール | × | 各コンポーネントの同時実行/スロット調整 | P2 | 10–15 |
 | 性能 | 応答10–60秒 | × | モデル選定/チャンク抑制/同時実行/キャッシュ最適化を追加実装 | P1 | 5–8 |
 | 可用性 | RPO24h/RTO12h | × | DDB PITR、Auroraバックアップ/MAZ、Runbook | P1 | 8–12 |
-| 監視 | トークン/ファイル/異常検知 | × | Dashboards/Athena/アラート調整 | P1 | 6–8 |
+| 監視 | トークン/ファイル/異常検知 | ◯ | GenU標準のダッシュボード/ログ出力を有効化し、Athena/アラートを調整 | P1 | 0–2 |
 | オートスケール/性能・可用性 | サーバレス→Fargate候補 | × | P1サーバレス、必要ならP2 Fargate常時起動 | P1 | 10–15 |
-| RAG精度モニタ/評価 | 精度チェック | × | P1で評価データセットと指標(EM/F1/HitRate等)を用意し、定期精度チェックを自動化。リランク/前処理調整のチューニングループに接続 | P1 | 8–12 |
-| 暗号化/鍵管理 | 暗号化/秘匿 | × | P1: S3/KMS、Aurora/DynamoDB暗号化、TLS終端、CMK運用(キー分離/ローテ)、ベクトルデータの保存時暗号化と転送時TLS確認まで実施 | P1 | 6–10 |
-| 監査/ログ | CloudTrail/CWL/Config | × | P1: CloudTrail全リージョン/Org、APIGW/Lambda/Bedrock/KB/Kendraのログ出力、Configルール、Athena/Security Lakeで横断分析、保存期間も要件に合わせ設定 | P1 | 8–12 |
-| 脅威検知/セキュリティ運用 | GuardDuty/SecurityHub/Inspector | × | P1: GuardDuty有効化と基本アラート連携、SecurityHub統合、Inspector（ECR/Fargate適用時含む）を有効化し、運用Runbookも整備 | P1 | 8–12 |
-| WAF/Shield | DDoS/入力検査 | × | P1で WAF/Shield を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールを適用 | P1 | 8–12 |
-| PrivateLink/VPC Endpoints | 安全なサービス間通信 | × | P1で PrivateLink/VPCエンドポイントを必要箇所に適用し、閉域経路を構成 | P1 | 6–10 |
+| RAG精度モニタ/評価 | 精度チェック | ◯ | P1で評価データセットと指標(EM/F1/HitRate等)を用意し、定期精度チェックを自動化。リランク/前処理調整のチューニングループに接続 | P1 | 0–2 |
+| 暗号化/鍵管理 | 暗号化/秘匿 | ◯ | パラメータでS3/KMS、Aurora/DynamoDB暗号化、TLS終端、CMK運用(キー分離/ローテ)、ベクトルデータの保存時暗号化と転送時TLS確認まで実施 | P1 | 0–2 |
+| 監査/ログ | CloudTrail/CWL/Config | ◯ | CloudTrail全リージョン/Org、APIGW/Lambda/Bedrock/KB/Kendraのログ出力、Configルール、Athena/Security Lakeで横断分析を有効化 | P1 | 0–2 |
+| 脅威検知/セキュリティ運用 | GuardDuty/SecurityHub/Inspector | ◯ | GuardDuty/SecurityHub/Inspectorを有効化し、基本アラート連携・Runbook整備 | P1 | 0–2 |
+| WAF/Shield | DDoS/入力検査 | ◯ | WAF/Shield を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールを適用 | P1 | 0–2 |
+| PrivateLink/VPC Endpoints | 安全なサービス間通信 | ◯ | 必要な PrivateLink/VPCエンドポイントを配置し、閉域経路を構成 | P1 | 0–2 |
 | テスト/検証 | 負荷・侵入テスト | × | P1で負荷テスト/セキュリティ診断（Inspector等）を実施し、RPO/RTO/スロットリングの実測を取得 | P1 | 8–12 |
 
 ## 5. 工数目安（概算・人日、実装中心／ざっくりご参考の工数です。AWSアーキテクトに見ていただいた方がいいかも）
-- フェーズ1: **150–200人日**  
+- フェーズ1: **120–160人日**  
   - SSO/認証統合、API標準化、VPC+VPN/TGW+PrivateLink、WAF/Shield/監査/脅威検知、RPO/RTO/バックアップ演習、RAG配線(KB/AOSS/pgvector)、Box最小取込、前処理(OCR/分割/クレンジング一部)、検索UI必須機能（出典/プレビュー/スコア/評価/フィードバック）、部門ユーザ管理、暗号化/KMS、監査ログ、負荷/セキュリティテスト、AgentCore などを包含
 - フェーズ2: **30–45人日**  
   - 管理/部門向けカスタムUI拡張、検索Want機能拡張（履歴/類似検索/エクスポート等）、前処理高度化（クレンジング/辞書/チャンク戦略）、Fargate/ALBへの移行や運用自動化、ベクトルDB管理UI、自動分割ツール、Box差分/Webhook、SharePoint取込 など
