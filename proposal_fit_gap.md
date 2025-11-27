@@ -11,26 +11,34 @@
 - **3か月MVPで実装すべき最小スコープ**: 認証（Entra SAML）、共通API（LLM/RAG）、Box取込パイプライン最小版、RAG検索（KB/AOSS or Aurora pgvectorのどちらかを優先選択）、監視/バックアップ基礎、AgentCore組込み、**最小メタ付与（部門/権限などアクセス制御に必要なメタのみ）**。
 - **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、セキュリティ強化（WAF/PrivateLink/GuardDuty/Security Hub）、オートスケール/性能・可用性設計の細分化、Fargate/ALBが必要ならここで切替。
 - **リスク/ギャップ**: Box連携（pgvector側はAPI実装が必要）、PostgreSQLベクトル指定、ALB+Fargate要求、管理UI拡張。いずれも追加開発で吸収可。
+- **RFPアーキ準拠の段階移行**: フェーズ1は GenU標準（APIGW+Lambda+CF/S3静的）でフロント＆バックを最短立ち上げ、フェーズ2でフロントのみ ALB+Fargate へ移行しつつ、API は APIGW+Lambda を継続利用して RFP 図の「フロント=ALB/Fargate・バック=APIGW/Lambda」を実現。
 
 ## 3. 段階開発プラン
 - **フェーズ1（～3か月、MVP）**  
+  - フロント/バック: GenU標準の CloudFront+S3（静的SPA）＋ API Gateway + Lambda。追加インフラを最小にして短期立ち上げ。  
   - 認証: Entra SAML + Cognito。  
   - 共通API/ゲートウェイ: LLM/RAG/AgentCore を API Gateway + Lambda で提供し、社内アプリはこのAPI利用を必須化。  
   - RAG: KB（Bedrock KB/AOSS 既定）または Aurora pgvector のどちらかを優先採用（両対応も可だが期間タイトなら片側）。  
+  - 部門ユーザ管理: 部門管理者向けの最小 UI/機能を追加（部門別ユーザー参照/追加/削除、権限付与）。Cognito/Entra のグループ属性を前提とし、APIGW+Lambda+DynamoDB で設定管理。  
   - Box連携: 定期Pull＋手動起動の最小パイプライン（前処理/チャンク/メタ最小）。  
   - AgentCore: 基盤として組込み（今後のエージェント開発は AgentCore API へ集約）。  
+  - システム管理者 Want を AWS 標準で充当: CloudWatch Dashboards/Logs Insights で利用状況・エラー監視、S3+Athena/CloudTrail でログエクスポート、Aurora/KB コンソールで容量/バックアップ確認。  
   - 非機能: RPO/RTO基準、DDB PITR、S3バージョン管理、基本監視/ダッシュボード、ガードレール基礎。  
   - 可用性/性能: サーバレス優先、チャンク上限/軽量モデル/同時実行の制御を初期設定。
 
 - **フェーズ2（+1–2か月）**  
+  - フロント: React アプリをコンテナ化して Fargate 常時起動、ALB 経由で配信（RFP 図に合わせる）。API 呼び出し先は引き続き APIGW のまま。  
+  - バック/API: APIGW + Lambda を継続利用し、UI側のみホスティング方式を移行。  
   - Box Webhook/差分取込、メタ拡張（要約/タグ/Q&A 等精度向上系）、部門別アクセス制御/容量管理の強化（Ph1で付与したメタを活用し UI/運用へ拡張）。  
-  - 管理UI拡張（容量/部門/お知らせ/ログ閲覧）、セキュリティ強化（WAF、PrivateLink/VPC内化、GuardDuty/SecurityHub/Config統合）。  
+  - 管理UI拡張: システム管理者向けカスタムUI（ダッシュボード/利用状況/ログ閲覧/お知らせ配信）、部門管理者向けUI（部門ダッシュボード、文書/アクセス権限管理、検索エクスポート、アップロード/インデックス管理）。  
+  - セキュリティ強化（WAF、PrivateLink/VPC内化、GuardDuty/SecurityHub/Config統合）。  
   - オートスケール調整: フロント（CF/Lambda@Edge or Fargate）、バック/API、LLM呼び出し同時実行、RAG（KB/Kendra or pgvector）、ベクトルDBのスロット/キャパ。  
   - Fargate/ALB構成が必須ならここで切替。
+  - 移行効果: インフラ強化は主にフロント差し替えで済み、RAG/LLMのコア実装への影響を最小化。  
 
 - **フェーズ3（+1–2か月）**  
   - DR演習、性能テスト自動化、AIガバナンス高度化（Ph1で導入したガードレールをバイアス/PII含め精緻化）。  
-  - メタデータ高度化（分類・辞書補正自動化）、部門ダッシュボード高度化、**データガバナンス強化（RAG投入文書の承認・棚卸し・ライフサイクル管理）**、追加SaaS連携（SharePoint 等）。  
+  - メタデータ高度化（分類・辞書補正自動化）、部門ダッシュボード高度化、**データガバナンス強化（RAG投入文書の承認・棚卸し・ライフサイクル管理）**、部門管理者/一般向け UI の残項目（マイページ/通知/FAQ 等）、追加SaaS連携（SharePoint 等）。  
   - コスト最適化（自動起動/停止、モデル/チャンク最適化）。
 
 ## 4. フィットギャップ一覧（実装フェーズつき、工数はざっくりご参考です）
@@ -39,11 +47,23 @@
 | 認証・SSO | Entra SAML | ◯ | IdP統合・ドメイン設定・テスト強化 | P1 | 8–12 |
 | API/ガバナンス | 全社標準APIを義務化 | △（ゲートウェイはあるが標準化前提なし） | API利用必須の方針化、API仕様書/SDKを整備、ガードレール適用 | P1 | 5–8 |
 | 文書管理ガバナンス | RAG投入文書の承認・棚卸し・ライフサイクル | △（未実装） | 承認ワークフロー、棚卸し、ライフサイクル管理を導入 | P3 | 10–15 |
-| ネットワーク/セキュリティ | WAF/PrivateLink/多層監視 | △（WAF無効、パブリックCF+APIGW） | WAF追加、VPC+PrivateLink/Lambda内向き、SecurityHub/GuardDuty/Config統合 | P2 | 20–25 |
-| ネットワーク構成 | ALB+Fargate経由 | ×（CF+S3+APIGW+Lambda） | 基盤初期はサーバレス（P1）。規模/負荷拡大や社内基準で必要になれば Fargate/ALB へ切替（P2以降）。 | P2 | 20–25 |
+| ネットワーク/セキュリティ | WAF/Shield/Config/CloudTrail/Inspector 等の多層監視 | △（WAF無効、パブリックCF+APIGW） | P1: 最小構成。P2: WAF/Shield/CloudTrail/Config/Inspector をRFP図に合わせて有効化、必要に応じ PrivateLink/VPC 内向き | P2 | 20–25 |
+| ネットワーク構成（フロント） | フロントは ALB+Fargate 経由（RFP図） | ×（CF+S3+APIGW+Lambda） | P1: CF+S3+APIGW+Lambda で最速立ち上げ。P2: React をコンテナ化し Fargate+ALB へ移行、API 呼び先は APIGW を継続 | P1/P2 | 20–25 |
+| オンプレ接続 | Site-to-Site VPN + Transit Gateway（認証のみインターネット） | ×（標準はパブリック） | P1: パブリック経由で PoC。P2: TGW+VPN を敷設し社内ネットワークからアクセス、必要なら PrivateLink 併用 | P2 | 10–15 |
 | RAG KB（既定） | ベクトルDB=PostgreSQL指定 | △（Bedrock KB+AOSS） | Aurora pgvectorを追加オプション。KB/AOSSは既定高速ルート | P1(片側) / P2(両対応) | 25–30 |
 | RAG Kendra | Kendra利用 | △（標準機能） | 必須でなければスコープ外。要なら維持 | P1/Optional | 0–10 |
 | OCR/表構造保持 | スキャンPDFや表を構造保持したい | ×（KB/Kendra標準は平坦化。KBはOCRなし） | Textract等でOCR＋テーブル抽出→HTML/Markdown/CSV化して S3/Document API 経由で投入（KB=前処理、Kendra= CDE/Document API）。表を平坦化でよければ追加不要 | P1（最小OCR）/P2（精度調整） | 12–18 |
+| 管理ダッシュボード/利用状況/ログ監査（Want） | 総利用者数・検索回数・部門別利用・エラー件数・ログエクスポート | ×（専用UIなし） | P1: AWSコンソール（CloudWatch Dashboards/Logs Insights、Athena+S3、CloudTrail）で提供。P2: 非AWSユーザ向けにカスタム管理UIを追加 | P1(コンソール)/P2(UI) | 12–18 |
+| ユーザ管理（全体） | 全ユーザ一覧、ロール変更、アカウント停止/削除 | △（Cognito/Entraコンソール依存） | P1: Cognito/Entraの管理コンソールで運用。P2: 必要ならカスタム管理UIを追加 | P1(コンソール)/P2(UI) | 5–8 |
+| ベクトルDB管理（容量/バックアップ/最適化） | 全体容量確認、インデックス最適化実行、DBバックアップ/復元 | ×（専用UIなし） | P1: Aurora/KB/AOSS のコンソール＋SQL/スナップショットで運用。P2: 自動化RunbookやカスタムUIで簡素化 | P1(コンソール)/P2(UI) | 10–15 |
+| 部門ユーザ管理 | 部門管理者が部門ユーザ/権限/容量を管理 | ×（標準UIなし） | P1で部門管理者向け最小UIを追加。Cognito/Entraのグループ属性を前提に、APIGW+Lambda+DynamoDBで CRUD/権限変更/部門設定を管理 | P1 | 12–18 |
+| 部門管理 | 部門作成/編集/削除、部門別容量制限設定 | ×（標準UIなし） | カスタム管理UIで実装。部門設定は DynamoDB/Parameter Store などで保持 | P2 | 10–15 |
+| お知らせ管理 | 障害/利用不可時の通知・お知らせ管理 | ×（標準UIなし） | 管理UIに通知管理を追加し、SNS/メール/画面バナー配信と連携 | P2 | 8–12 |
+| 部門ダッシュボード（部門管理者向け） | 部門内検索回数、登録文書数、ストレージ使用率、人気キーワード | ×（標準UIなし） | カスタム部門ダッシュボードを追加（メトリクスは CloudWatch Logs/Athena から集計） | P2 | 12–18 |
+| 文書/アクセス権限管理UI | 文書一覧、メタデータ編集、タグ/カテゴリ分類、文書削除、文書単位のアクセス制御 | ×（標準UIなし） | カスタムUI＋APIで実装。メタ/ACLは DynamoDB/ベクトルDBメタに保持 | P2 | 18–24 |
+| 高度検索・結果エクスポート（部門管理者/一般） | セマンティック検索、フィルタ（日付/カテゴリ/タグ）、検索結果エクスポート | △（基本検索のみ） | 既存検索にフィルタ・エクスポート機能を追加（UI改修）。部門管理者にも提供 | P2 | 12–18 |
+| ファイルアップロード/インデックス管理UI | Word/Excel/テキスト/画像の一括アップロード、進捗表示、インデックス状態確認/再実行 | ×（標準UIなし） | アップロードUIとインデックス状態画面を追加。再実行/リトライを API 経由で実行 | P2 | 12–18 |
+| マイページ/通知/ヘルプ・FAQ | プロフィール編集、通知設定、表示件数設定、ヘルプ/問い合わせ | ×（標準UIなし） | カスタムUIで追加。通知はSNS/メール/アプリ内通知と連携 | P3 | 10–15 |
 | Boxパイプライン | Box起点、前処理/メタ付与、スケジュール/通知 | × | Box SDK/Webhook＋Step Functions/Batch/Lambda、メタ付与可 | P1(最小) / P2(差分・Webhook) | 30–40 |
 | Box→pgvector | Boxアダプタ無し | × | API連携実装（Box API → S3 → 前処理 → pgvector） | P1 | 12–18 |
 | 前処理カスタム | Python差込・標準ロジック置換 | △（サンプル最小） | 前処理ステップをモジュール化し差替え可能に設計 | P1 | 10–15 |
@@ -70,6 +90,8 @@
 ※要件定義・テスト・PMは別途。スコープに応じ前後します。
 
 ## 6. メモ・補足
+- RFP図のフロントは ALB+Fargate。フェーズ1は GenU 標準（CF+S3+APIGW+Lambda）で立ち上げ、フェーズ2でフロントのみ Fargate+ALB に差し替え、API は APIGW+Lambda を継続。  
+- RFP図は Site-to-Site VPN + Transit Gateway 前提。フェーズ2で閉域接続を追加（フェーズ1はパブリックで PoC）。  
 - Kendra: RFPに明示なし。不要なら外し、KB/pgvectorに一本化。  
 - Box: Kendra向けアダプタはあるが、pgvectorルートは自前API実装が必要。  
 - Textract: Azure Document Intelligence 相当。スキャンPDF/OCR/表抽出が必要な場合は前処理で利用し、HTML/Markdown/CSVに整形して KB/Kendra へ投入。  
