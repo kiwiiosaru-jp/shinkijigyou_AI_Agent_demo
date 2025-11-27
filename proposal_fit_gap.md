@@ -49,7 +49,8 @@
 | API/ガバナンス | 全社標準API | × | API必須化、仕様/SDK提供、ガードレール適用を運用ルールとして追加実装 | P1 | 5–8 |
 | 文書管理ガバナンス | 承認/棚卸/LC | × | 承認WF・棚卸し・ライフサイクル管理を新規実装 | P3 | 10–15 |
 | ネットワーク/セキュリティ | WAF/Shield/監査 | ◯ | パラメータ設定で WAF/Shield/CloudTrail/Config/Inspector を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールと監査ログを整備 | P1 | 8–12 |
-| ネットワーク構成（フロント） | ALB+Fargate | × | P1 CF+S3+APIGW+Lambda（バックはVPC内）で立ち上げ、同一VPCで Fargate+ALB へ切替可能な設計とする | P1 | 20–25 |
+| ネットワーク構成（フロント） | CF+S3+APIGW+Lambda | ◯ | P1はGenU標準のCF+S3+APIGW+Lambda（VPC内）で立ち上げ、閉域前提を満たす | P1 | 0 |
+| ネットワーク構成（フロント） | ALB+Fargate | × | P2で同一VPC内の Fargate+ALB へ移行し、UIをコンテナ常時起動に切替（APIGWは継続） | P2 | 20–25 |
 | オンプレ接続 | TGW+VPN | × | P1から Site-to-Site VPN＋TGW を構成し社内ネットワーク経由で利用（必要に応じ PrivateLink も併用） | P1 | 10–15 |
 | RAG KB（AOSS） | Bedrock KB/AOSS | ◯ | GenU標準のBedrock KB + AOSSをそのまま活用 | P1 | 0 |
 | RAG（pgvector） | PostgreSQL(Aurora pgvector) | × | Lambda/API をpgvector用に新規実装し、メタ/検索/埋め込み/リランク対応を追加 | P1 | 25–30 |
@@ -96,9 +97,9 @@
 | オートスケール | 要素別スケール | × | 各コンポーネントの同時実行/スロット調整 | P2 | 10–15 |
 | 性能 | 応答10–60秒 | × | モデル選定/チャンク抑制/同時実行/キャッシュ最適化を追加実装 | P1 | 5–8 |
 | 可用性 | RPO24h/RTO12h | × | DDB PITR、Auroraバックアップ/MAZ、Runbook | P1 | 8–12 |
-| 監視 | トークン/ファイル/異常検知 | ◯ | GenU標準のダッシュボード/ログ出力を有効化し、Athena/アラートを調整 | P1 | 0–2 |
-| オートスケール/性能・可用性 | サーバレス→Fargate候補 | × | P1サーバレス、必要ならP2 Fargate常時起動 | P1 | 10–15 |
-| RAG精度モニタ/評価 | 精度チェック | ◯ | P1で評価データセットと指標(EM/F1/HitRate等)を用意し、定期精度チェックを自動化。リランク/前処理調整のチューニングループに接続 | P1 | 0–2 |
+| 監視 | トークン/ファイル/異常検知 | × | CloudWatch Logs/Dashboardsを整備し、Athena/アラートでトークン/ファイル/異常検知を追加実装 | P1 | 6–8 |
+| オートスケール/性能・可用性 | サーバレス→Fargate候補 | × | P1サーバレス、P2でFargate常時起動に切替可能な設計 | P1 | 10–15 |
+| RAG精度モニタ/評価 | 精度チェック | × | 評価データセットと指標(EM/F1/HitRate等)を整備し、定期精度チェックとリランク/前処理調整ループを新規実装 | P3 | 15 |
 | 暗号化/鍵管理 | 暗号化/秘匿 | ◯ | パラメータでS3/KMS、Aurora/DynamoDB暗号化、TLS終端、CMK運用(キー分離/ローテ)、ベクトルデータの保存時暗号化と転送時TLS確認まで実施 | P1 | 0–2 |
 | 監査/ログ | CloudTrail/CWL/Config | ◯ | CloudTrail全リージョン/Org、APIGW/Lambda/Bedrock/KB/Kendraのログ出力、Configルール、Athena/Security Lakeで横断分析を有効化 | P1 | 0–2 |
 | 脅威検知/セキュリティ運用 | GuardDuty/SecurityHub/Inspector | ◯ | GuardDuty/SecurityHub/Inspectorを有効化し、基本アラート連携・Runbook整備 | P1 | 0–2 |
@@ -107,11 +108,11 @@
 | テスト/検証 | 負荷・侵入テスト | × | P1で負荷テスト/セキュリティ診断（Inspector等）を実施し、RPO/RTO/スロットリングの実測を取得 | P1 | 8–12 |
 
 ## 5. 工数目安（概算・人日、実装中心／ざっくりご参考の工数です。AWSアーキテクトに見ていただいた方がいいかも）
-- フェーズ1: **120–160人日**  
+- フェーズ1: **132–174人日**  
   - SSO/認証統合、API標準化、VPC+VPN/TGW+PrivateLink、WAF/Shield/監査/脅威検知、RPO/RTO/バックアップ演習、RAG配線(KB/AOSS/pgvector)、Box最小取込、前処理(OCR/分割/クレンジング一部)、検索UI必須機能（出典/プレビュー/スコア/評価/フィードバック）、部門ユーザ管理、暗号化/KMS、監査ログ、負荷/セキュリティテスト、AgentCore などを包含
 - フェーズ2: **30–45人日**  
   - 管理/部門向けカスタムUI拡張、検索Want機能拡張（履歴/類似検索/エクスポート等）、前処理高度化（クレンジング/辞書/チャンク戦略）、Fargate/ALBへの移行や運用自動化、ベクトルDB管理UI、自動分割ツール、Box差分/Webhook、SharePoint取込 など
-- フェーズ3: **20–30人日**  
+- フェーズ3: **35–45人日**  
   - Q&A変換・タグ/要約生成の高度化、残りの一般向けUI（マイページ/通知/FAQ）、AIガバナンス強化、追加SaaS連携、コスト最適化
 
 ※要件定義・テスト・PMは別途。スコープに応じ前後します。
