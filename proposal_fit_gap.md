@@ -129,3 +129,37 @@
   - LLM: モデル同時実行上限・軽量モデル優先・チャンク数制御。  
   - RAG KB: KB/AOSS スロット、Aurora pgvector は ACU/最大接続/マルチAZ。  
   - 可用性: サーバレスはマネージド冗長。AuroraはマルチAZ、バックアップ方針明示。DRはコールド/ウォーム選択（RTO/RPOとコストで決定）。
+
+## 7. 略語一覧
+| 略称 | 正式名称 | 説明 |
+| --- | --- | --- |
+| RAG | Retrieval-Augmented Generation | 外部データを検索してLLM応答に組み込む方式 |
+| LLM | Large Language Model | 大規模言語モデル（Bedrock経由で利用） |
+| APIGW | Amazon API Gateway | フロントからのAPI入口 |
+| CF | Amazon CloudFront | 静的コンテンツ配信CDN |
+| SPA | Single Page Application | React等の単一ページWebアプリ |
+| S3 | Amazon Simple Storage Service | 静的ホスティング/ファイル保管 |
+| Lambda | AWS Lambda | サーバレス実行環境（API処理など） |
+| ALB | Application Load Balancer | L7ロードバランサ（Fargate前段など） |
+| Fargate | AWS Fargate | コンテナ実行基盤（常時起動） |
+| VPC | Virtual Private Cloud | 仮想ネットワーク |
+| TGW | Transit Gateway | VPC/オンプレ接続ハブ |
+| VPN | Site-to-Site VPN | オンプレとVPCのIPsec接続 |
+| PrivateLink | AWS PrivateLink | VPC間/サービス間のプライベート接続 |
+| WAF | AWS Web Application Firewall | L7ファイアウォール（Bot/SQLi/XSS防御など） |
+| Shield | AWS Shield | DDoS保護（Standard/Advanced） |
+| GuardDuty | Amazon GuardDuty | 脅威検知サービス |
+| Security Hub | AWS Security Hub | セキュリティ統合ダッシュボード |
+| Inspector | Amazon Inspector | 脆弱性/コンプライアンススキャン |
+| CloudTrail | AWS CloudTrail | API呼び出し監査ログ |
+| Config | AWS Config | 設定変更の記録と準拠性チェック |
+| KMS | AWS Key Management Service | 鍵管理・暗号化 |
+| PITR | Point-In-Time Recovery | 時点復旧（DynamoDB等） |
+| RPO/RTO | Recovery Point/Time Objective | 目標復旧時点/時間 |
+| KB | Knowledge Base | Bedrock Knowledge Bases（AOSSバックエンド） |
+| AOSS | Amazon OpenSearch Serverless | KBのベクトルストア |
+| pgvector | Aurora PostgreSQL + pgvector | ベクトル検索拡張を持つPostgreSQL |
+| Kendra | Amazon Kendra | エンタープライズ検索サービス |
+| AgentCore | Amazon Bedrock Agent Core | エージェント実行基盤 |
+| SAML | Security Assertion Markup Language | Entra ID等とCognitoを連携する認証方式 |
+| SDK | Software Development Kit | 開発者向けライブラリ群 |
