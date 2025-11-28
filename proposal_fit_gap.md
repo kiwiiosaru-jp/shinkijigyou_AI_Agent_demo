@@ -8,14 +8,14 @@
 
 ## 2. エグゼクティブサマリ
 - GenUフルオプションを核に、**共通LLMゲートウェイ/APIを全社標準インターフェース**として提示し、以降のアプリはこのAPIを利用するガバナンスモデルを採用。
-- **3か月MVPで実装すべき最小スコープ**: 認証（Entra SAML）、共通API（LLM/RAG）、Box取込パイプライン最小版、RAG検索（KB/AOSS or Aurora pgvectorのどちらかを優先選択）、監視/バックアップ基礎、AgentCore組込み、**最小メタ付与（部門/権限などアクセス制御に必要なメタのみ）**。
-- **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、検索UI拡張（スコア/履歴/類似検索等）、Fargate/ALBへの移行を必要に応じて実施。セキュリティ/監査/閉域はPh1で実装済み。
+- **3か月MVPで実装すべき最小スコープ**: 認証（Entra SAML）、共通API（LLM/RAG）、Box取込パイプライン最小版、RAG検索（KB/AOSS or Aurora pgvectorのどちらかを優先選択）、監視/バックアップ基礎、AgentCore組込み、**最小メタ付与（部門/権限などアクセス制御に必要なメタのみ）**、VPC閉域（APIGW Private/VPCE＋ALB+S3配信）。
+- **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、検索UI拡張（スコア/履歴/類似検索等）、フロントを Fargate 常時起動に切替（必要時）。セキュリティ/監査/閉域はPh1で実装済み。
 - **リスク/ギャップ**: Box連携（pgvector側はAPI実装が必要）、PostgreSQLベクトル指定、ALB+Fargate要求、管理UI拡張。いずれも追加開発で吸収可。
-- **RFPアーキ準拠の段階移行**: フェーズ1は GenU標準（APIGW+Lambda+CF/S3静的）でフロント＆バックを最短立ち上げ、フェーズ2でフロントのみ ALB+Fargate へ移行しつつ、API は APIGW+Lambda を継続利用して RFP 図の「フロント=ALB/Fargate・バック=APIGW/Lambda」を実現。
+- **RFPアーキ準拠の段階移行**: フェーズ1は閉域（APIGW Private/VPCE＋ALB+S3静的配信）で立ち上げ、フェーズ2でフロントのみ Fargate 常時起動へ移行しつつ、API は APIGW+Lambda を継続利用。
 
 ## 3. 段階開発プラン
 - **フェーズ1（～3か月、MVP）**  
-  - フロント/バック: GenU標準の CloudFront+S3（静的SPA）＋ API Gateway + Lambda をベースに、VPC 内にバックエンドを配置（RFPの閉域前提）。  
+  - フロント/バック: VPC 内で ALB+S3 から静的SPAを配信（閉域）。API は API Gateway（Private/VPCE）＋ Lambda を継続、必要に応じ Lambda を VPC アタッチ。  
   - 認証: Entra SAML + Cognito。  
   - 共通API/ゲートウェイ: LLM/RAG/AgentCore を API Gateway + Lambda で提供し、社内アプリはこのAPI利用を必須化。  
   - RAG: KB（Bedrock KB/AOSS 既定）または Aurora pgvector のどちらかを優先採用（両対応も可だが期間タイトなら片側）。  
@@ -49,7 +49,7 @@
 | API/ガバナンス | 全社標準API | × | API必須化、仕様/SDK提供、ガードレール適用を運用ルールとして追加実装 | P1 | 5–8 |
 | 文書管理ガバナンス | 承認/棚卸/LC | × | 承認WF・棚卸し・ライフサイクル管理を新規実装 | P3 | 10–15 |
 | ネットワーク/セキュリティ | WAF/Shield/監査 | ◯ | パラメータ設定で WAF/Shield/CloudTrail/Config/Inspector を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールと監査ログを整備 | P1 | 8–12 |
-| ネットワーク構成（フロント） | CF+S3+APIGW+Lambda | ◯ | P1はGenU標準のCF+S3+APIGW+Lambda（VPC内）で立ち上げ、閉域前提を満たす | P1 | 0 |
+| ネットワーク構成（フロント） | ALB+S3（静的SPA配信） | ◯ | P1はVPC内のALB+S3で静的SPA配信（APIGWはPrivate/VPCE） | P1 | 0 |
 | ネットワーク構成（フロント） | ALB+Fargate | × | P2で同一VPC内の Fargate+ALB へ移行し、UIをコンテナ常時起動に切替（APIGWは継続） | P2 | 20–25 |
 | オンプレ接続 | TGW+VPN | × | P1から Site-to-Site VPN＋TGW を構成し社内ネットワーク経由で利用（必要に応じ PrivateLink も併用） | P1 | 10–15 |
 | RAG KB（AOSS） | Bedrock KB/AOSS | ◯ | GenU標準のBedrock KB + AOSSをそのまま活用 | P1 | 0 |
@@ -118,7 +118,7 @@
 ※要件定義・テスト・PMは別途。スコープに応じ前後します。
 
 ## 6. メモ・補足
-- RFP図のフロントは ALB+Fargate。フェーズ1は GenU 標準（CF+S3+APIGW+Lambda）かつVPC内で立ち上げ、必要に応じ同一VPCで Fargate+ALB に差し替え。API は APIGW+Lambda を継続。  
+- RFP図のフロントは ALB+Fargate。フェーズ1は VPC 内の ALB+S3（静的SPA）＋ APIGW Private/VPCE＋Lambda で立ち上げ、必要に応じ同一VPCで Fargate+ALB に差し替え。API は APIGW+Lambda を継続。  
 - RFP図は Site-to-Site VPN + Transit Gateway 前提。フェーズ1から VPN/TGW/PrivateLink を構成し、閉域接続で提供。  
 - Kendra: RFPに明示なし。不要なら外し、KB/pgvectorに一本化。  
 - Box: Kendra向けアダプタはあるが、pgvectorルートは自前API実装が必要。  
@@ -163,3 +163,15 @@
 | AgentCore | Amazon Bedrock Agent Core | エージェント実行基盤 |
 | SAML | Security Assertion Markup Language | Entra ID等とCognitoを連携する認証方式 |
 | SDK | Software Development Kit | 開発者向けライブラリ群 |
+
+## 8. 運用系サービスの仕分け（標準/オプション）
+| サービス | 標準/オプション | 説明 |
+| --- | --- | --- |
+| Amazon CloudWatch | 標準 | ログ/メトリクス/Dashboards を利用（APIGW/Lambdaほか） |
+| AWS CloudTrail | 標準 | 監査ログ（APIGW/Lambda/Bedrock/KB/Kendra 等） |
+| AWS KMS | 標準 | S3/DynamoDB/Aurora 等の暗号化で利用 |
+| AWS WAF | オプション | パラメータで有効化。IP/CIDR/レート制御/Bot/SQLi/XSS ルールを適用 |
+| AWS Shield | オプション | Standardは自動、Advancedは任意加入でDDoS保護強化 |
+| AWS Config | オプション | ルール定義と監査を有効化（準拠性チェック） |
+| Amazon Inspector | オプション | ECR/Fargate 等の脆弱性スキャンを有効化 |
+| AWS Secrets Manager | オプション | APIキー等のシークレット格納に使用 |
