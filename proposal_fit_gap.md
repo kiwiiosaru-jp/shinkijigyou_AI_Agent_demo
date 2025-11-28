@@ -161,14 +161,15 @@
 | SAML | Security Assertion Markup Language | Entra ID等とCognitoを連携する認証方式 |
 | SDK | Software Development Kit | 開発者向けライブラリ群 |
 
-## 8. 運用系サービスの仕分け（標準/オプション）
-| サービス | 標準/オプション | 説明 |
+## 8. 運用系サービスの仕分け（標準/ギャップ）
+| サービス | 区分 | 説明 |
 | --- | --- | --- |
-| Amazon CloudWatch | 標準 | ログ/メトリクス/Dashboards を利用（APIGW/Lambdaほか） |
-| AWS CloudTrail | 標準 | 監査ログ（APIGW/Lambda/Bedrock/KB/Kendra 等） |
-| AWS KMS | 標準 | S3/DynamoDB/Aurora 等の暗号化で利用 |
-| AWS WAF | オプション | パラメータで有効化。IP/CIDR/レート制御/Bot/SQLi/XSS ルールを適用 |
-| AWS Shield | オプション | Standardは自動、Advancedは任意加入でDDoS保護強化 |
-| AWS Config | オプション | ルール定義と監査を有効化（準拠性チェック） |
-| Amazon Inspector | オプション | ECR/Fargate 等の脆弱性スキャンを有効化 |
-| AWS Secrets Manager | オプション | APIキー等のシークレット格納に使用 |
+| Amazon CloudWatch | 標準（既定） | ログ/メトリクス/Dashboards を利用（APIGW/Lambdaほか） |
+| AWS CloudTrail | 標準（既定） | 監査ログ（APIGW/Lambda/Bedrock/KB/Kendra 等） |
+| AWS KMS | 標準（既定） | S3/DynamoDB/Aurora 等の暗号化で利用 |
+| AWS WAF | 標準（パラメータ） | パラメータで有効化。IP/CIDR/レート制御/Bot/SQLi/XSS ルールを適用 |
+| AWS Shield Standard | 標準（自動） | L3/L4のDDoS保護が自動付与 |
+| AWS Shield Advanced | ×（ギャップ） | 別契約・設定が必要 |
+| AWS Config | ×（ギャップ） | ルール定義と監査を有効化（準拠性チェック） |
+| Amazon Inspector | ×（ギャップ） | ECR/Fargate 等の脆弱性スキャンを有効化 |
+| AWS Secrets Manager | ×（ギャップ） | APIキー等のシークレット格納に使用 |
