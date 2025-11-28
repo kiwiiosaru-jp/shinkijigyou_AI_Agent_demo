@@ -8,14 +8,14 @@
 
 ## 2. エグゼクティブサマリ
 - GenUフルオプションを核に、**共通LLMゲートウェイ/APIを全社標準インターフェース**として提示し、以降のアプリはこのAPIを利用するガバナンスモデルを採用。
-- **3か月MVPで実装すべき最小スコープ**: 認証（Entra SAML）、共通API（LLM/RAG）、Box取込パイプライン最小版、RAG検索（KB/AOSS or Aurora pgvectorのどちらかを優先選択）、監視/バックアップ基礎、AgentCore組込み、**最小メタ付与（部門/権限などアクセス制御に必要なメタのみ）**、VPC閉域（APIGW Private/VPCE＋ALB+S3配信）。
-- **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、検索UI拡張（スコア/履歴/類似検索等）、フロントを Fargate 常時起動に切替（必要時）。セキュリティ/監査/閉域はPh1で実装済み。
-- **リスク/ギャップ**: Box連携（pgvector側はAPI実装が必要）、PostgreSQLベクトル指定、ALB+Fargate要求、管理UI拡張。いずれも追加開発で吸収可。
-- **RFPアーキ準拠の段階移行**: フェーズ1は閉域（APIGW Private/VPCE＋ALB+S3静的配信）で立ち上げ、フェーズ2でフロントのみ Fargate 常時起動へ移行しつつ、API は APIGW+Lambda を継続利用。
+- **3か月MVPで実装すべき最小スコープ**: 認証（Entra SAML）、共通API（LLM/RAG）、Box取込パイプライン最小版、RAG検索（KB/AOSS or Aurora pgvectorのどちらかを優先選択）、監視/バックアップ基礎、AgentCore組込み、**最小メタ付与（部門/権限などアクセス制御に必要なメタのみ）**、VPC閉域（APIGW Private/VPCE＋ALB+Fargate＋S3配信）。
+- **フェーズ2以降**で: Box差分/Webhook・**メタ付与の拡張（要約/タグ/Q&A化など精度向上系）**、管理UI拡張（容量/部門/お知らせ/ログ）、検索UI拡張（スコア/履歴/類似検索等）、前処理高度化など。セキュリティ/監査/閉域はPh1で実装済み。
+- **リスク/ギャップ**: Box連携（pgvector側はAPI実装が必要）、PostgreSQLベクトル指定、ALB+Fargate運用コスト、管理UI拡張。いずれも追加開発で吸収可。
+- **RFPアーキ準拠の段階移行**: フェーズ1から閉域（APIGW Private/VPCE＋ALB+Fargate＋S3配信）で立ち上げ、API は APIGW+Lambda を継続利用。
 
 ## 3. 段階開発プラン
 - **フェーズ1（～3か月、MVP）**  
-  - フロント/バック: VPC 内で ALB+S3 から静的SPAを配信（閉域）。API は API Gateway（Private/VPCE）＋ Lambda を継続、必要に応じ Lambda を VPC アタッチ。  
+  - フロント/バック: VPC 内で ALB+Fargate（Reactコンテナ常時起動）＋ S3 を配信経路にし、API は API Gateway（Private/VPCE）＋ Lambda を継続、必要に応じ Lambda を VPC アタッチ。  
   - 認証: Entra SAML + Cognito。  
   - 共通API/ゲートウェイ: LLM/RAG/AgentCore を API Gateway + Lambda で提供し、社内アプリはこのAPI利用を必須化。  
   - RAG: KB（Bedrock KB/AOSS 既定）または Aurora pgvector のどちらかを優先採用（両対応も可だが期間タイトなら片側）。  
@@ -27,14 +27,12 @@
   - 可用性/性能: サーバレス優先、チャンク上限/軽量モデル/同時実行の制御を初期設定。
 
 - **フェーズ2（+1–2か月）**  
-  - フロント: React アプリをコンテナ化して Fargate 常時起動、ALB 経由で配信（RFP 図に合わせる）。API 呼び出し先は引き続き APIGW のまま。  
-  - バック/API: APIGW + Lambda を継続利用し、UI側のみホスティング方式を移行。  
+  - フロント: P1の ALB+Fargate 構成を維持しつつ、UI/UX改修やスケーリング調整を実施。API 呼び出し先は APIGW のまま。  
+  - バック/API: APIGW + Lambda を継続利用。  
   - Box Webhook/差分取込、メタ拡張（要約/タグ/Q&A 等精度向上系）、部門別アクセス制御/容量管理の強化（Ph1で付与したメタを活用し UI/運用へ拡張）。  
   - 管理UI拡張: システム管理者向けカスタムUI（ダッシュボード/利用状況/ログ閲覧/お知らせ配信）、部門管理者向けUI（部門ダッシュボード、文書/アクセス権限管理、検索エクスポート、アップロード/インデックス管理）。  
   - 検索UI拡張（Want系の追加開発）: 関連性スコア表示、類似検索提案、検索履歴表示、フィードバックコメント入力/保存を段階的に追加。  
-  - オートスケール調整: フロント（CF/Lambda@Edge or Fargate）、バック/API、LLM呼び出し同時実行、RAG（KB/Kendra or pgvector）、ベクトルDBのスロット/キャパ。  
-  - Fargate/ALB構成が必須ならここで切替。
-  - 移行効果: インフラ強化は主にフロント差し替えで済み、RAG/LLMのコア実装への影響を最小化。  
+  - オートスケール調整: フロント（Fargate）、バック/API、LLM呼び出し同時実行、RAG（KB/Kendra or pgvector）、ベクトルDBのスロット/キャパ。  
 
 - **フェーズ3（+1–2か月）**  
   - DR演習、性能テスト自動化、AIガバナンス高度化（Ph1で導入したガードレールをバイアス/PII含め精緻化）。  
@@ -49,8 +47,7 @@
 | API/ガバナンス | 全社標準API | × | API必須化、仕様/SDK提供、ガードレール適用を運用ルールとして追加実装 | P1 | 5–8 |
 | 文書管理ガバナンス | 承認/棚卸/LC | × | 承認WF・棚卸し・ライフサイクル管理を新規実装 | P3 | 10–15 |
 | ネットワーク/セキュリティ | WAF/Shield/監査 | ◯ | パラメータ設定で WAF/Shield/CloudTrail/Config/Inspector を有効化し、IP/CIDR制限・レート制御・Bot/SQLi/XSS ルールと監査ログを整備 | P1 | 8–12 |
-| ネットワーク構成（フロント） | ALB+S3（静的SPA配信） | ◯ | P1はVPC内のALB+S3で静的SPA配信（APIGWはPrivate/VPCE） | P1 | 0 |
-| ネットワーク構成（フロント） | ALB+Fargate | × | P2で同一VPC内の Fargate+ALB へ移行し、UIをコンテナ常時起動に切替（APIGWは継続） | P2 | 20–25 |
+| ネットワーク構成（フロント） | ALB+Fargate+S3 | ◯ | P1でVPC内にALB+Fargate（Reactコンテナ常時起動）＋S3配信を構成し、APIGWはPrivate/VPCEで閉域 | P1 | 20–25 |
 | オンプレ接続 | TGW+VPN | × | P1から Site-to-Site VPN＋TGW を構成し社内ネットワーク経由で利用（必要に応じ PrivateLink も併用） | P1 | 10–15 |
 | RAG KB（AOSS） | Bedrock KB/AOSS | ◯ | GenU標準のBedrock KB + AOSSをそのまま活用 | P1 | 0 |
 | RAG（pgvector） | PostgreSQL(Aurora pgvector) | × | Lambda/API をpgvector用に新規実装し、メタ/検索/埋め込み/リランク対応を追加 | P1 | 25–30 |
@@ -108,9 +105,9 @@
 | テスト/検証 | 負荷・侵入テスト | × | P1で負荷テスト/セキュリティ診断（Inspector等）を実施し、RPO/RTO/スロットリングの実測を取得 | P1 | 8–12 |
 
 ## 5. 工数目安（概算・人日、実装中心／ざっくりご参考の工数です。AWSアーキテクトに見ていただいた方がいいかも）
-- フェーズ1: **132–174人日**  
+- フェーズ1: **135–178人日**  
   - SSO/認証統合、API標準化、VPC+VPN/TGW+PrivateLink、WAF/Shield/監査/脅威検知、RPO/RTO/バックアップ演習、RAG配線(KB/AOSS/pgvector)、Box最小取込、前処理(OCR/分割/クレンジング一部)、検索UI必須機能（出典/プレビュー/スコア/評価/フィードバック）、部門ユーザ管理、暗号化/KMS、監査ログ、負荷/セキュリティテスト、AgentCore などを包含
-- フェーズ2: **30–45人日**  
+- フェーズ2: **25–40人日**  
   - 管理/部門向けカスタムUI拡張、検索Want機能拡張（履歴/類似検索/エクスポート等）、前処理高度化（クレンジング/辞書/チャンク戦略）、Fargate/ALBへの移行や運用自動化、ベクトルDB管理UI、自動分割ツール、Box差分/Webhook、SharePoint取込 など
 - フェーズ3: **35–45人日**  
   - Q&A変換・タグ/要約生成の高度化、残りの一般向けUI（マイページ/通知/FAQ）、AIガバナンス強化、追加SaaS連携、コスト最適化
