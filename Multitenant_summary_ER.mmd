@@ -6,8 +6,8 @@ erDiagram
         string vectordb_namespace
         string llm_model
         string guardrail_profile
-        string groups[]    %% グループ情報を直接配列で保持
-        string acls[]      %% ACL情報を直接配列で保持
+        string groups
+        string acls
     }
 
     TENANT_GROUP_MAPPING {
@@ -32,7 +32,6 @@ erDiagram
         json metadata
     }
 
-    %% 関係
     TENANT ||--o{ TENANT_GROUP_MAPPING : has
     TENANT ||--o{ TENANT_ACL : defines
     TENANT ||--o{ DOCUMENT : owns
