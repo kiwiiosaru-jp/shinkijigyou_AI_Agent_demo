@@ -2,16 +2,17 @@ flowchart TD
     subgraph Preparation
         SSO[Entra SSO]
         Cognito[AWS Cognito]
-        Master[マスタ・設定テーブル]
+        Master[繝槭せ繧ｿ險ｭ螳壹ユ繝ｼ繝悶Ν]
         SSO --> Cognito --> Master
     end
 
     subgraph Operation
-        Client[クライアント]
+        Client[繧ｯ繝ｩ繧､繧｢繝ｳ繝�]
         API[API Gateway]
         Tenant[Tenant Resolver]
         LLM[LLM Gateway]
         KB[Knowledge Base / VectorDB]
+
         Client --> API
         API --> Tenant
         Tenant --> LLM
