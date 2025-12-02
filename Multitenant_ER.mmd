@@ -1,0 +1,63 @@
+erDiagram
+  TENANT {
+    varchar tenant_id PK
+    varchar name
+    varchar kb_namespace
+    varchar vectordb_namespace
+    varchar llm_model
+    varchar guardrail_profile
+    varchar status
+    timestamptz created_at
+  }
+
+  GROUP_MASTER {
+    varchar group_name PK
+    varchar description
+  }
+
+  TENANT_GROUP_MAPPING {
+    varchar group_name FK
+    varchar tenant_id FK
+    -- composite PK (group_name, tenant_id)
+  }
+
+  ACL_MASTER {
+    varchar acl_key PK
+    varchar description
+  }
+
+  TENANT_ACL {
+    varchar tenant_id FK
+    varchar acl_key FK
+    -- composite PK (tenant_id, acl_key)
+  }
+
+  DOCUMENT {
+    uuid doc_id PK
+    varchar tenant_id FK
+    varchar kb_namespace
+    jsonb metadata
+    -- metadata includes: acl: [..], other tags
+  }
+
+  VECTOR_ENTRY {
+    uuid vector_id PK
+    uuid doc_id FK
+    varchar tenant_id FK
+    jsonb metadata
+    vector embedding
+  }
+
+  GUARDRAIL_PROFILE {
+    varchar profile_id PK
+    jsonb rules
+  }
+
+  TENANT ||--o{ TENANT_GROUP_MAPPING : has
+  GROUP_MASTER ||--o{ TENANT_GROUP_MAPPING : maps
+  TENANT ||--o{ TENANT_ACL : defines
+  ACL_MASTER ||--o{ TENANT_ACL : used_by
+  TENANT ||--o{ DOCUMENT : owns
+  DOCUMENT ||--o{ VECTOR_ENTRY : has
+  TENANT ||--o{ GUARDRAIL_PROFILE : uses
+
