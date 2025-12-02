@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant Client
+    participant API_Gateway
+    participant Tenant_Resolver
+    participant LLM_Gateway
+    participant VectorDB
+
+    Note over Client: クライアントはJWTを取得済み
+    Client->>API_Gateway: HTTP Request (Authorization: Bearer JWT)
+    API_Gateway->>Tenant_Resolver: 認証情報を渡す (JWT claims)
+    Tenant_Resolver->>Tenant_Resolver: JWT解析、tenant_id・ACL抽出
+    Tenant_Resolver->>LLM_Gateway: リクエスト転送 (X-Tenant-ID, X-Tenant-ACL)
+    LLM_Gateway->>VectorDB: 検索クエリ (tenant_id + ACL + namespace)
+    VectorDB-->>LLM_Gateway: 検索結果
+    LLM_Gateway-->>Client: LLM結果を返す
+
