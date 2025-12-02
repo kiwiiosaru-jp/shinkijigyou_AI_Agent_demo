@@ -1,23 +1,23 @@
 flowchart TD
-    subgraph æº–å‚™ãƒ•ã‚§ãƒ¼ã‚º
+    subgraph €”õƒtƒF[ƒY
         A1[Entra SSO / Identity Provider]
-        A2[Cognito / AWS èªè¨¼]
-        A3[ãƒžã‚¹ã‚¿ãƒ»è¨­å®šãƒ†ãƒ¼ãƒ–ãƒ«æº–å‚™]
+        A2[Cognito / AWS ”FØ]
+        A3[ƒ}ƒXƒ^EÝ’èƒe[ƒuƒ‹€”õ]
         A1 --> A2 --> A3
     end
 
-    subgraph é‹ç”¨ãƒ•ã‚§ãƒ¼ã‚º
-        B1[ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã‚¢ãƒ—ãƒª]
+    subgraph ‰^—pƒtƒF[ƒY
+        B1[ƒNƒ‰ƒCƒAƒ“ƒgƒAƒvƒŠ]
         B2[API Gateway]
         B3[Tenant Resolver Lambda]
-        B4[LLM Gateway (Node.js Lambda)]
+        B4[LLM Gateway Lambda]
         B5[Knowledge Base / VectorDB]
     end
 
-    %% æº–å‚™ãƒ•ã‚§ãƒ¼ã‚º â†’ é‹ç”¨ãƒ•ã‚§ãƒ¼ã‚º
+    %% €”õƒtƒF[ƒY ¨ ‰^—pƒtƒF[ƒY
     A3 --> B1
 
-    %% é‹ç”¨ãƒ•ãƒ­ãƒ¼
+    %% ‰^—pƒtƒ[
     B1 -->|JWT: tenant_id, groups| B2
     B2 --> B3
     B3 -->|X-Tenant-ID, X-Tenant-ACL| B4
