@@ -1,0 +1,68 @@
+erDiagram
+    TENANT {
+        string tenant_id PK
+        string name
+        string kb_namespace
+        string vectordb_namespace
+        string llm_model
+        string guardrail_profile
+    }
+    GROUP_MASTER {
+        string group_name PK
+        string description
+    }
+    ACL_MASTER {
+        string acl_key PK
+        string description
+    }
+    TENANT_GROUP_MAPPING {
+        string tenant_id FK
+        string group_name FK
+    }
+    TENANT_ACL {
+        string tenant_id FK
+        string acl_key FK
+    }
+    GUARDRAIL_PROFILE {
+        string profile_id PK
+        json rules
+    }
+    DOCUMENT {
+        string doc_id PK
+        string tenant_id FK
+        string kb_namespace
+        json metadata
+    }
+    VECTOR_ENTRY {
+        string vector_id PK
+        string doc_id FK
+        string tenant_id FK
+        json metadata
+    }
+    MESSAGE_QUEUE_ITEM {
+        string message_id PK
+        string tenant_id FK
+        json attributes
+    }
+    CACHE_ENTRY {
+        string cache_key PK
+        string tenant_id FK
+        json value
+    }
+    AUDIT_LOG {
+        string log_id PK
+        string tenant_id FK
+        json details
+    }
+
+    TENANT ||--o{ TENANT_GROUP_MAPPING : has
+    GROUP_MASTER ||--o{ TENANT_GROUP_MAPPING : maps
+    TENANT ||--o{ TENANT_ACL : defines
+    ACL_MASTER ||--o{ TENANT_ACL : used_by
+    TENANT ||--o{ DOCUMENT : owns
+    DOCUMENT ||--o{ VECTOR_ENTRY : has
+    TENANT ||--|| GUARDRAIL_PROFILE : uses
+    TENANT ||--o{ MESSAGE_QUEUE_ITEM : generates
+    TENANT ||--o{ CACHE_ENTRY : owns
+    TENANT ||--o{ AUDIT_LOG : logs
+
