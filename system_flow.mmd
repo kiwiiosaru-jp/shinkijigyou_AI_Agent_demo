@@ -1,25 +1,22 @@
 flowchart TD
-    subgraph 準備フェーズ
-        A1[Entra SSO / Identity Provider]
-        A2[Cognito / AWS 認証]
-        A3[マスタ・設定テーブル準備]
-        A1 --> A2 --> A3
+    subgraph Preparation
+        SSO[Entra SSO]
+        Cognito[AWS Cognito]
+        Master[マスタ・設定テーブル]
+        SSO --> Cognito --> Master
     end
 
-    subgraph 運用フェーズ
-        B1[クライアントアプリ]
-        B2[API Gateway]
-        B3[Tenant Resolver Lambda]
-        B4[LLM Gateway Lambda]
-        B5[Knowledge Base / VectorDB]
+    subgraph Operation
+        Client[クライアント]
+        API[API Gateway]
+        Tenant[Tenant Resolver]
+        LLM[LLM Gateway]
+        KB[Knowledge Base / VectorDB]
+        Client --> API
+        API --> Tenant
+        Tenant --> LLM
+        LLM --> KB
     end
 
-    %% 準備フェーズ → 運用フェーズ
-    A3 --> B1
-
-    %% 運用フロー
-    B1 -->|JWT: tenant_id, groups| B2
-    B2 --> B3
-    B3 -->|X-Tenant-ID, X-Tenant-ACL| B4
-    B4 --> B5
+    Master --> Client
 
