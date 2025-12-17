@@ -1,0 +1,12 @@
+erDiagram
+    M_LINE ||--o{ M_EQUIPMENT : "所属"
+    M_SYMPTOM_CATEGORY ||--o{ M_SYMPTOM_CATEGORY : "親子(階層)"
+    M_SYMPTOM_CATEGORY ||--o{ M_QUESTION_SET : "分類→質問割当"
+    M_QUESTION ||--o{ M_QUESTION_SET : "質問→割当"
+    M_CAUSE ||--o{ T_TICKET : "主原因"
+    M_ACTION ||--o{ T_TICKET : "主処置"
+    M_LINE ||--o{ T_TICKET : "ライン"
+    M_EQUIPMENT ||--o{ T_TICKET : "設備"
+    M_SYMPTOM_CATEGORY ||--o{ T_TICKET : "現象分類"
+    T_TICKET ||--o{ T_TICKET_ANSWER : "補足回答"
+    M_QUESTION ||--o{ T_TICKET_ANSWER : "質問"
