@@ -1,0 +1,42 @@
+flowchart TB
+  subgraph PP[Power Platform / UI]
+    PA[Power Apps<br/>修理受付・完了<br/>必須: 日時/ライン/設備/現象<br/>分類コード→固定補足質問]
+    PAutomate[Power Automate<br/>登録トリガー/通知<br/>同期・索引更新キュー]
+    Entra[Entra ID<br/>認証・認可]
+    PBI[Power BI<br/>KPI/再発傾向/品質指標]
+  end
+
+  subgraph AZAPP[Azure アプリ層]
+    Func[Azure Functions（API集約）<br/>RAG API: 検索→要約→JSON返却<br/>優先ロジック（設備寄り/現象寄り）]
+    Monitor[監視/運用<br/>App Insights・ログ<br/>リトライ・品質フラグ]
+  end
+
+  subgraph DATA[データ / 検索・AI]
+    DV[Dataverse（正本データ候補）<br/>T_Ticket（固定列）<br/>T_TicketAnswer（縦持ち）<br/>マスタ（分類/質問セット等）<br/>source_type/needs_review]
+    AIS[Azure AI Search（索引）<br/>ハイブリッド: BM25＋ベクトル<br/>synonym map（略語/同義語）<br/>equipmentVector / symptomVector]
+    AOAI[Azure OpenAI<br/>類似案件の要約・注意点<br/>（将来）校正/構造化案]
+  end
+
+  subgraph LEG[レガシー取込（過去PDF等）]
+    Store[PDF/文書保管（Blob/SharePoint）<br/>原本凍結]
+    DI[Azure AI Document Intelligence<br/>OCR/抽出（JSON）<br/>confidence付与]
+    LegacyMove[部分移行<br/>埋められる列だけ投入<br/>欠損はNULL＋品質フラグ]
+  end
+
+  Entra --> PA
+  PA -->|RAG呼出| Func
+  Func -->|検索| AIS
+  Func -->|要約生成| AOAI
+  Func -->|類似TopN＋要約返却| PA
+
+  PA -->|登録/更新| DV
+  PAutomate -->|登録トリガー| DV
+  DV -->|索引更新| AIS
+  Func --> Monitor
+
+  DV -->|分析用データ| PBI
+
+  Store -->|抽出| DI
+  DI -->|抽出結果| LegacyMove
+  LegacyMove -->|部分投入| DV
+  LegacyMove -->|索引化| AIS
