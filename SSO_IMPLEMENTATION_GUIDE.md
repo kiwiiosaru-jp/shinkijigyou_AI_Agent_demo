@@ -109,18 +109,36 @@ User → Cognito → Entra ID → SAML Response → Cognito
 
 #### 2. 部門選択フロー
 ```
-User selects department → POST /user/department (validation)
-→ Store in localStorage → Used in RAG queries
+User selects department in UI
+→ POST /user/department (validation only, no Cognito update)
+→ Store in localStorage: 'selected_department' = 'engineering'
+→ JWT token remains unchanged (custom:samlGroups="Sales,Engineering")
+→ Used in RAG queries as extraData
 ```
+
+**重要**:
+- ✅ JWTトークンは変更されない
+- ✅ ページリロードは不要
+- ✅ LocalStorageに保存されるのみ
+- ✅ RAGクエリ時にextraDataとして送信
 
 #### 3. RAG クエリフロー
 ```
-User query → predict/predictStream Lambda
-→ Extract custom:samlGroups from token
-→ Override with localStorage department (if valid)
-→ Apply filter to Knowledge Base
-→ Return filtered results
+User submits query
+→ Frontend: Get department from localStorage
+→ Frontend: Create extraData with department filter
+→ POST to predict/predictStream Lambda
+→ Lambda: Extract custom:samlGroups from JWT token (default)
+→ Lambda: Override with extraData department (if provided)
+→ Lambda: Apply filter to Knowledge Base query
+→ Knowledge Base: Filter documents by department metadata
+→ Return filtered results to user
 ```
+
+**フィルタ優先順位**:
+1. **ExtraData filter** (from localStorage) - 最優先
+2. **Dynamic filter** (from JWT token custom:samlGroups) - デフォルト
+3. **Hidden static filter** (application-level) - 常に適用
 
 ---
 
@@ -243,7 +261,13 @@ return {
 };
 ```
 
-**重要**: このAPIはCognitoのユーザー属性を更新しません。フロントエンドがlocalStorageに保存し、RAGクエリ時に使用します。
+**重要ポイント**:
+- ✅ このAPIはCognitoのユーザー属性を**更新しません**
+- ✅ JWTトークンを**リフレッシュしません**
+- ✅ 検証のみを行い、フロントエンドがlocalStorageに保存
+- ✅ RAGクエリ時にlocalStorageの値をextraDataとして送信
+- ✅ ユーザーは複数部門に所属可能（例: Engineering, Sales）
+- ✅ UI上で部門を切り替えても、JWTトークンの`custom:samlGroups`は変更されない
 
 ---
 
@@ -290,6 +314,19 @@ export const getDynamicFilters = (
 #### UI フィルタオーバーライド
 
 **実装**: `packages/web/src/pages/RagAuroraKnowledgeBasePage.tsx`
+
+**重要**: ユーザーがUI上で部門を切り替えた場合の動作:
+
+1. ✅ **JWTトークンは変更されない**
+   - `custom:samlGroups` は "Engineering,Sales" のまま
+   - トークンリフレッシュは行われない
+
+2. ✅ **LocalStorageに部門IDを保存**
+   - `localStorage.setItem('selected_department', 'engineering')`
+
+3. ✅ **RAGクエリ時にextraDataとして送信**
+   - LocalStorageの値がバックエンドに送られる
+   - バックエンドでextraDataのフィルタが優先される
 
 ユーザーがUI上で部門を切り替えた場合、localStorageの値を使用してフィルタを上書き:
 
@@ -1013,14 +1050,19 @@ const RagAuroraKnowledgeBasePage: React.FC = () => {
     if (!newDept) return;
 
     try {
+      // バックエンドで検証（Cognitoは更新しない）
       await setDepartment(newDept);
+
+      // ローカル状態を更新
       setSelectedDepartment(newDept);
 
       // 成功メッセージ
       alert(`部門を ${DEPARTMENT_LABELS[newDept]} に切り替えました`);
 
-      // トークンリフレッシュとリロード（オプション）
-      // await refreshTokenAndReload();
+      // ❌ JWTトークンはリフレッシュしない
+      // ❌ ページリロードもしない
+      // ✅ LocalStorageに保存された値がRAGクエリで使用される
+      // await refreshTokenAndReload(); // 実行しない
     } catch (error) {
       console.error('Failed to switch department:', error);
       alert('部門の切り替えに失敗しました');
@@ -1271,9 +1313,13 @@ https://login.microsoftonline.com/{TENANT_ID}/federationmetadata/2007-06/federat
 ✅ **動的グループマッピング**: Graph API によるグループ名変換
 ✅ **部門ベースアクセス制御**: RAG Knowledge Base の部門別フィルタリング
 ✅ **柔軟な部門切り替え**: LocalStorage ベースの高速部門切り替え
+   - JWTトークンをリフレッシュせずに部門切り替え
+   - ページリロード不要
+   - ナレッジベースのフィルタリング専用
 ✅ **強制再認証**: 毎回 Entra ID ログイン画面を表示
 ✅ **ユーザー情報表示**: ログインユーザーのメールアドレス表示
 ✅ **スケーラブル設計**: 新しい部門やグループの追加が容易
+✅ **マルチ部門対応**: ユーザーは複数部門に所属可能（例: Engineering, Sales）
 
 ### 今後の改善案
 
