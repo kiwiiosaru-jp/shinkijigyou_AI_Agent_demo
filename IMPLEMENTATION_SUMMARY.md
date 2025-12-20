@@ -549,7 +549,12 @@ user3@example.com       | 3       | Sales   | 2025-12-18 09:45:10
 
 #### 今回の改善のきっかけ
 
-部門切り替え機能の実装において、**最も重要な改善点は IAM ロール（Admin/User）の適切な保持**でした。以前の実装では、部門を切り替えた際にユーザーの役割（Admin または User）が正しく保持されず、Knowledge Base のアクセス制御が期待通りに動作しませんでした。
+部門切り替え機能の実装において、**最も重要な改善点は IAM ロール（Admin/User）の適切な保持**でした。以前の実装では、部門を切り替えた際にユーザーの役割（Admin または User）が正しく保持されず、以下の問題が発生していました：
+
+1. **S3 RAG インジェスト用ファイルへのアクセス権限の喪失** - Admin のみがアクセス可能
+2. **ユーザ管理権限の喪失** - Admin は配下のユーザを招待・削除可能
+
+注: Knowledge Base のデータフィルタリングは部門ID（custom:department）のみで行われ、Admin/User ロールは影響しません。
 
 #### 以前の問題
 
@@ -557,7 +562,7 @@ user3@example.com       | 3       | Sales   | 2025-12-18 09:45:10
 
 ```typescript
 // 以前の実装の問題
-User: user@example.com
+User: admin@example.com (Engineering 部門の管理者)
 Current Groups: ['Engineering-Admin', 'Sales-User']
 
 // ユーザーが Sales 部門に切り替え
@@ -568,17 +573,27 @@ Current Groups: ['Engineering-Admin', 'Sales-User']
          ↓
 Result: User is in ['Engineering-Admin', 'Sales-User']
         ↓
-[Knowledge Base] JWT の cognito:groups から最初のグループを使用
-                → 'Engineering-Admin' が選択される
-                ↓
-問題: Sales 部門に切り替えたのに Engineering のデータにアクセス
+[S3 Access Control]
+  - S3 RAG インジェスト用ファイルへのアクセス試行
+  - JWT の cognito:groups を確認
+  - 'Sales-Admin' が見つからない（'Sales-User' のみ）
+  - AccessDenied: Admin ロールが必要
+        ↓
+[User Management]
+  - Sales 部門のユーザ招待ボタンをクリック
+  - JWT の cognito:groups を確認
+  - 'Sales-Admin' が見つからない（'Sales-User' のみ）
+  - Forbidden: Admin 権限が必要
+        ↓
+問題1: Sales 部門の RAG インジェスト用ファイルにアクセスできない
+問題2: Sales 部門のユーザを招待・削除できない
 ```
 
 **根本原因:**
 1. ユーザーが複数の部門グループに所属（Engineering-Admin, Sales-User）
-2. 部門切り替え時に、既存のロール（Admin）を考慮せず、デフォルトの User ロールでグループに追加
-3. Knowledge Base は JWT の `cognito:groups` 配列から最初にマッチしたグループを使用
-4. 結果として、意図しない部門のデータにアクセス
+2. 部門切り替え時に、ターゲット部門（Sales）での既存のロール（Admin）を考慮せず、デフォルトの User ロールでグループに追加
+3. S3 アクセス制御とユーザ管理機能は Admin ロールを要求
+4. 結果として、部門管理者が部門を切り替えると管理者権限を失う
 
 #### 現在の実装：ロール保持ロジック
 
@@ -672,7 +687,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 **シナリオ: Engineering-Admin から Sales 部門への切り替え**
 
 ```typescript
-User: user@example.com
+User: admin@example.com (複数部門の管理者)
 Current Groups: ['Engineering-Admin', 'Sales-Admin']
                                        ↑
               注: Sales-Admin グループにも所属（Admin ロールを持つ）
@@ -693,48 +708,91 @@ Current Groups: ['Engineering-Admin', 'Sales-Admin']
     "custom:department": "sales"  ← これで部門を特定
   }
   ↓
-[Knowledge Base]
-  1. custom:department = 'sales' を確認
-  2. cognito:groups から 'Sales-Admin' を使用
-  3. Admin 権限で Sales 部門のデータにアクセス
+[S3 Access Control]
+  - S3 RAG インジェスト用ファイルへのアクセス試行
+  - JWT の cognito:groups を確認
+  - 'Sales-Admin' が見つかる
+  - AccessGranted: Admin ロールを保持
   ↓
-✅ 正しい動作: Sales 部門のデータに Admin 権限でアクセス
+[User Management]
+  - Sales 部門のユーザ招待ボタンをクリック
+  - JWT の cognito:groups を確認
+  - 'Sales-Admin' が見つかる
+  - Success: ユーザ招待・削除が可能
+  ↓
+✅ 正しい動作: Sales 部門の管理者として全ての権限を保持
 ```
 
 #### IAM ロールとアクセス制御の関係
 
-**Knowledge Base のアクセス制御ロジック:**
+**Admin ロールによるアクセス制御の実装箇所:**
 
 ```typescript
-// Knowledge Base Lambda（仮想的なコード）
-export const handler = async (event: APIGatewayProxyEvent) => {
+// 1. S3 RAG インジェスト用ファイルへのアクセス制御
+// API Lambda（概念的なコード）
+export const uploadRAGFileHandler = async (event: APIGatewayProxyEvent) => {
   const claims = event.requestContext.authorizer?.claims;
-
-  // 1. custom:department から現在の部門を取得
   const currentDepartment = claims?.['custom:department'];  // 'sales'
-
-  // 2. cognito:groups から該当する部門グループを検索
   const groups = claims?.['cognito:groups'] || [];
+
+  // Admin ロールを確認
   const departmentGroup = groups.find(g =>
     g.toLowerCase().startsWith(currentDepartment)
-  );  // 'Sales-Admin' を発見
-
-  // 3. ロールを判定
+  );  // 'Sales-Admin' を検索
   const role = departmentGroup?.split('-')[1];  // 'Admin'
 
-  // 4. アクセス制御
-  const filter = {
-    department: currentDepartment,
-    minimumRole: role === 'Admin' ? 'Admin' : 'User'
-  };
+  if (role !== 'Admin') {
+    return {
+      statusCode: 403,
+      body: JSON.stringify({ error: 'Admin role required for file upload' })
+    };
+  }
 
-  // 5. Knowledge Base クエリ
+  // S3 へのアップロード処理
+  const s3Key = `${currentDepartment}/rag-files/${fileName}`;
+  await s3Client.putObject({ Bucket: ragBucket, Key: s3Key, Body: file });
+
+  return { statusCode: 200, body: JSON.stringify({ success: true }) };
+};
+
+// 2. ユーザ管理権限の制御
+// API Lambda（概念的なコード）
+export const inviteUserHandler = async (event: APIGatewayProxyEvent) => {
+  const claims = event.requestContext.authorizer?.claims;
+  const currentDepartment = claims?.['custom:department'];
+  const groups = claims?.['cognito:groups'] || [];
+
+  // Admin ロールを確認
+  const departmentGroup = groups.find(g =>
+    g.toLowerCase().startsWith(currentDepartment)
+  );
+  const role = departmentGroup?.split('-')[1];
+
+  if (role !== 'Admin') {
+    return {
+      statusCode: 403,
+      body: JSON.stringify({ error: 'Admin role required for user management' })
+    };
+  }
+
+  // ユーザー招待処理
+  // (将来的に Entra ID への Graph API 呼び出し、または Cognito への直接追加)
+
+  return { statusCode: 200, body: JSON.stringify({ success: true }) };
+};
+
+// 3. Knowledge Base のデータフィルタリング（参考）
+// 注: Knowledge Base は部門ID（custom:department）のみでフィルタリング
+// Admin/User ロールは影響しない
+export const knowledgeBaseQueryHandler = async (event: APIGatewayProxyEvent) => {
+  const claims = event.requestContext.authorizer?.claims;
+  const currentDepartment = claims?.['custom:department'];  // 'sales'
+
+  // 部門IDのみでフィルタリング（ロールは不要）
+  const filter = { department: currentDepartment };
   const results = await queryKnowledgeBase(query, filter);
 
-  return {
-    statusCode: 200,
-    body: JSON.stringify(results)
-  };
+  return { statusCode: 200, body: JSON.stringify(results) };
 };
 ```
 
@@ -743,7 +801,8 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 | 項目 | ロール保持なし | ロール保持あり |
 |------|---------------|---------------|
 | Admin が部門切り替え | User ロールに降格 | Admin ロールを保持 |
-| アクセス可能なデータ | User レベルのデータのみ | Admin レベルのデータ |
+| S3 RAG ファイルアクセス | ❌ アクセス不可 | ✅ アップロード・管理可能 |
+| ユーザ管理権限 | ❌ 招待・削除不可 | ✅ 配下ユーザ管理可能 |
 | セキュリティ | ❌ 意図しない権限変更 | ✅ 権限の一貫性を維持 |
 | ユーザー体験 | ❌ 部門切り替え後に権限不足 | ✅ シームレスな操作 |
 | 監査証跡 | ⚠️  権限変更が記録されない | ✅ ロール保持がログに記録 |
@@ -756,7 +815,8 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 - 意図しない権限昇格や降格を防止
 
 **2. アクセス制御の正確性:**
-- Knowledge Base のフィルタリングが正しく機能
+- S3 RAG インジェスト用ファイルへのアクセス制御が正しく機能
+- ユーザ管理機能の権限制御が適切に動作
 - 部門ごとのデータ分離が確実に実施
 - IAM ロールベースのアクセス制御（RBAC）が適切に動作
 
@@ -764,6 +824,11 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 - どのロールでどの部門にアクセスしたかを追跡可能
 - 権限変更の履歴が完全に記録される
 - コンプライアンス要件を満たす
+
+**4. 管理者体験の向上:**
+- 部門管理者は複数部門を管理する際、各部門で管理者権限を維持
+- 部門を切り替えるたびに権限を再付与する必要がない
+- 運用負荷の軽減
 
 ---
 
@@ -1534,6 +1599,7 @@ aws logs filter-log-events \
 | 2025-12-20 | 2.0 | 詳細解説を追加（主な成果に焦点） | Claude Code |
 | 2025-12-20 | 3.0 | IAM 権限中心の解説に変更 | Claude Code |
 | 2025-12-20 | 4.0 | 前回の詳細解説を復活、IAM ロール制御の解説を追加、IAM 権限の技術詳細を Appendix に移動 | Claude Code |
+| 2025-12-20 | 4.1 | Section 1.6 を修正: Admin ロールの用途を S3 RAG ファイルアクセスとユーザ管理権限に訂正、Knowledge Base は部門IDのみでフィルタリングすることを明記 | Claude Code |
 
 ---
 
