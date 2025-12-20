@@ -832,7 +832,7 @@ export const knowledgeBaseQueryHandler = async (event: APIGatewayProxyEvent) => 
 
 ---
 
-## 🔒 詳細解説：セキュリティの向上
+## 🔒 詳細解説：Entra ID と Cognito のユーザ・グループ同期
 
 ### 2.1 グループ削除同期：なし → 最大24時間以内
 
@@ -1518,6 +1518,274 @@ aws logs filter-log-events \
 
 ---
 
+### 2.5 ユーザ同期：Entra ID と Cognito の同期戦略
+
+#### 実装状況
+
+| 同期種別 | 実装状況 | 同期タイミング | 説明 |
+|---------|---------|--------------|------|
+| ユーザ作成同期 | ✅ 自動 | 初回ログイン時 | Entra ID でユーザ作成 → SAML SSO 初回ログイン → Cognito にユーザ自動作成 |
+| グループ追加同期 | ✅ 自動 | ログイン/JWT リフレッシュ時 | Entra ID でグループに追加 → 次回ログイン時に Cognito グループに追加 |
+| グループ削除同期 | ✅ 自動 | ログイン/JWT リフレッシュ時 | Entra ID でグループから削除 → 次回ログイン時に Cognito グループから削除 |
+| ユーザ削除同期 | ⚠️ 手動推奨 | - | Entra ID でユーザ削除 → Cognito には残る（ログイン不可）→ 定期クリーンアップ推奨 |
+| ユーザ属性同期 | ✅ 自動 | ログイン時 | Entra ID の属性（email, name）→ Cognito に同期 |
+
+#### ユーザ作成の同期フロー
+
+**Entra ID → Cognito への自動ユーザ作成:**
+
+```
+[Entra ID 管理者]
+  ↓ Entra ID ポータルで新規ユーザ作成
+[Entra ID]
+  ├─ ユーザ: newuser@example.com
+  └─ グループ: Engineering-User に追加
+  ↓
+[新規ユーザが初回ログイン]
+  ├─ SAML SSO 認証 (Entra ID)
+  └─ 認証成功 → SAML Assertion を Cognito に送信
+  ↓
+[Cognito]
+  ├─ SAML Assertion を受信
+  ├─ ユーザが存在しないことを確認
+  ├─ ユーザを自動作成: EntraID_newuser@example.com
+  └─ カスタム属性 custom:samlGroups に Entra ID グループ ID を保存
+  ↓
+[Pre-Token Generation Lambda: mapSamlGroups]
+  ├─ Graph API でグループ ID → 表示名に変換
+  ├─ Engineering-User グループに追加
+  └─ JWT に cognito:groups を設定
+  ↓
+[GenU アプリ]
+  ✅ 新規ユーザがログイン成功、Engineering 部門にアクセス可能
+```
+
+**ポイント:**
+- ✅ Cognito へのユーザ作成は**完全自動**
+- ✅ Entra ID が Single Source of Truth
+- ✅ 初回ログイン時に必要な全ての設定が完了
+- ✅ 管理者が Cognito を操作する必要なし
+
+#### ユーザ削除の同期戦略
+
+**現在の実装（ユーザ削除同期なし）:**
+
+```
+Day 1: Entra ID でユーザを削除
+  [Entra ID 管理者]
+    ↓ ユーザ exemployee@example.com を削除
+  [Entra ID]
+    ❌ ユーザ削除: exemployee@example.com
+
+  [Cognito]
+    ✅ ユーザ残存: EntraID_exemployee@example.com
+    ✅ グループ: Engineering-User
+
+Day 2 ~ ∞: 退職者がログイン試行
+  [退職者のブラウザ]
+    ↓ GenU アプリにアクセス
+  [Cognito / SAML SSO]
+    ↓ SAML 認証を試行
+  [Entra ID]
+    ❌ 認証失敗: ユーザが存在しない
+    ↓
+  [Cognito]
+    ❌ SAML Assertion を受信できない
+    ↓
+  [GenU アプリ]
+    ❌ ログイン失敗（アクセス拒否）
+
+結論: Cognito にユーザが残っていても、Entra ID で削除されていればログイン不可
+      → 実質的なセキュリティリスクなし
+```
+
+**ユーザ削除同期が不要な理由:**
+
+1. **SAML SSO の仕組み**: Entra ID が認証を制御しているため、Entra ID から削除されたユーザは SAML 認証ができない
+2. **Pre-Token Generation Lambda の起動条件**: ログイン成功時のみ起動されるため、削除されたユーザには実行されない
+3. **Cognito のユーザレコードは「ゴースト」**: ログイン不可能なため、実害なし
+
+**推奨: 定期的なクリーンアップジョブ（オプション）**
+
+コンプライアンスやストレージ最適化のため、定期的に未使用ユーザを削除することを推奨します。
+
+```bash
+#!/bin/bash
+# cleanup_inactive_users.sh
+# Cognito から90日以上ログインしていないユーザを削除
+
+USER_POOL_ID="ap-northeast-1_xxxx"
+INACTIVE_DAYS=90
+TODAY=$(date +%s)
+
+echo "=== Cognito User Cleanup ==="
+echo "Target: Users inactive for $INACTIVE_DAYS days"
+echo ""
+
+# 全ユーザーを取得
+aws cognito-idp list-users \
+  --user-pool-id "$USER_POOL_ID" \
+  --region ap-northeast-1 \
+  --query 'Users[*].[Username,UserLastModifiedDate,UserStatus]' \
+  --output text | while read USERNAME LAST_MODIFIED STATUS; do
+
+  # 最終ログイン日を Unix timestamp に変換
+  LAST_MODIFIED_TS=$(date -d "$LAST_MODIFIED" +%s)
+  DIFF_DAYS=$(( (TODAY - LAST_MODIFIED_TS) / 86400 ))
+
+  if [ $DIFF_DAYS -gt $INACTIVE_DAYS ]; then
+    echo "Inactive user: $USERNAME (Last login: $DIFF_DAYS days ago)"
+
+    # Entra ID で削除済みか確認（オプション）
+    # az ad user show --id "${USERNAME#EntraID_}" 2>/dev/null
+    # if [ $? -ne 0 ]; then
+    #   echo "  User not found in Entra ID, safe to delete"
+    # fi
+
+    # 削除実行（ドライラン: --dry-run を追加してテスト）
+    # aws cognito-idp admin-delete-user \
+    #   --user-pool-id "$USER_POOL_ID" \
+    #   --username "$USERNAME" \
+    #   --region ap-northeast-1
+
+    # echo "  ✓ Deleted from Cognito"
+  fi
+done
+
+echo ""
+echo "=== Cleanup Complete ==="
+```
+
+**クリーンアップジョブの推奨実行頻度:**
+- 月次: ストレージ最適化、コンプライアンス対応
+- 四半期: 一般的な運用
+
+**CloudWatch Events でのスケジュール実行:**
+
+```typescript
+// packages/cdk/lib/construct/cleanup.ts (新規作成の場合)
+
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+
+// Lambda 関数の作成
+const cleanupFunction = new lambda.Function(this, 'CleanupInactiveUsers', {
+  runtime: lambda.Runtime.NODEJS_20_X,
+  handler: 'cleanupInactiveUsers.handler',
+  code: lambda.Code.fromAsset('lambda'),
+  environment: {
+    USER_POOL_ID: userPool.userPoolId,
+    INACTIVE_DAYS: '90',
+  },
+});
+
+// IAM 権限
+userPool.grant(cleanupFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminDeleteUser');
+
+// 月次スケジュール (毎月1日 午前2時 JST)
+new events.Rule(this, 'MonthlyCleanupRule', {
+  schedule: events.Schedule.cron({
+    minute: '0',
+    hour: '17', // 2 AM JST = 5 PM UTC (前日)
+    day: '1',
+    month: '*',
+    year: '*',
+  }),
+  targets: [new targets.LambdaFunction(cleanupFunction)],
+});
+```
+
+#### ユーザ属性の同期
+
+**SAML Assertion からの属性マッピング:**
+
+```typescript
+// Cognito User Pool の SAML 属性マッピング設定
+// packages/cdk/lib/construct/auth.ts
+
+const samlProvider = new cognito.CfnUserPoolIdentityProvider(
+  this,
+  'EntraIDSAMLProvider',
+  {
+    userPoolId: userPool.userPoolId,
+    providerName: 'EntraID',
+    providerType: 'SAML',
+    attributeMapping: {
+      email: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+      name: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name',
+      'custom:samlGroups': 'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups',
+    },
+  }
+);
+```
+
+**自動同期される属性:**
+
+| Entra ID 属性 | Cognito 属性 | 同期タイミング | 更新可能 |
+|--------------|-------------|--------------|---------|
+| Email | email | ログイン時 | ✅ 自動 |
+| Display Name | name | ログイン時 | ✅ 自動 |
+| Groups (Object IDs) | custom:samlGroups | ログイン時 | ✅ 自動 |
+| Department | - | - | ❌ 手動（custom:department は別管理） |
+
+**属性更新の動作:**
+
+```
+Day 1: Entra ID でメールアドレスを変更
+  [Entra ID]
+    olduser@example.com → newuser@example.com
+
+Day 2: ユーザがログイン
+  [SAML SSO]
+    ↓ SAML Assertion に新しいメールアドレスを含む
+  [Cognito]
+    ↓ email 属性を自動更新: newuser@example.com
+  [Pre-Token Generation Lambda]
+    ↓ JWT に新しいメールアドレスを設定
+  [GenU アプリ]
+    ✅ UI に新しいメールアドレスが表示される
+```
+
+#### 同期の監査とトラブルシューティング
+
+**同期状態の確認:**
+
+```bash
+# Entra ID のユーザとグループを確認
+az ad user show --id user@example.com \
+  --query '{DisplayName:displayName,Email:mail,AccountEnabled:accountEnabled}'
+
+az ad user get-member-groups --id user@example.com \
+  --query '[].{DisplayName:displayName,Id:id}' -o table
+
+# Cognito のユーザとグループを確認
+aws cognito-idp admin-get-user \
+  --user-pool-id ap-northeast-1_xxxx \
+  --username EntraID_user@example.com \
+  --region ap-northeast-1 \
+  --query 'UserAttributes[?Name==`email` || Name==`custom:samlGroups`]'
+
+aws cognito-idp admin-list-groups-for-user \
+  --user-pool-id ap-northeast-1_xxxx \
+  --username EntraID_user@example.com \
+  --region ap-northeast-1 \
+  --query 'Groups[*].GroupName'
+```
+
+**同期ログの確認:**
+
+```bash
+# Pre-Token Generation Lambda のログ
+aws logs tail /aws/lambda/GenerativeAiUseCasesStack-AuthMapSamlGroupsA7D3F1D-xxxxx \
+  --since 1h \
+  --format short \
+  --region ap-northeast-1 \
+  --filter-pattern "EntraID_user@example.com"
+```
+
+---
+
 ## 📂 変更ファイル一覧
 
 ### Lambda 関数
@@ -1538,6 +1806,534 @@ aws logs filter-log-events \
 | `docs/SSO_IMPLEMENTATION_GUIDE.md` | 部門切り替えセクションを更新 | ✅ コミット済み |
 | `docs/DEPARTMENT_SWITCHING_SECURITY.md` | セキュリティ技術ドキュメント作成 | ✅ 作成済み |
 | `docs/IMPLEMENTATION_SUMMARY.md` | 本ドキュメント（実装サマリー） | 📝 本ファイル |
+
+---
+
+## 👥 第3章：ユーザー管理フローの詳細設計
+
+### 3.1 概要：ユーザー管理の基本方針
+
+本章では、Entra ID と Cognito を統合した環境における、ユーザーとグループの管理フローについて詳細に解説します。
+
+**基本方針:**
+- **Entra ID が Single Source of Truth（唯一の真実の情報源）**
+- **Read-Only 方式**: AWS アプリケーションから Entra ID への書き込みは行わない
+- **セキュリティ最優先**: Entra ID への書き込み権限を持たないことで攻撃対象領域を最小化
+
+---
+
+### 3.2 ユーザーのライフサイクル管理
+
+#### 3.2.1 ユーザー作成フロー
+
+```mermaid
+sequenceDiagram
+    participant Admin as Entra ID 管理者
+    participant EntraID as Entra ID
+    participant User as 新規ユーザー
+    participant Cognito as AWS Cognito
+    participant Lambda as mapSamlGroups Lambda
+    participant GenU as GenU アプリ
+
+    Admin->>EntraID: 1. 新規ユーザー作成<br/>email: newuser@example.com
+    Admin->>EntraID: 2. グループに追加<br/>Engineering-User
+
+    Note over Admin,EntraID: ユーザー作成完了<br/>招待メール送信
+
+    User->>GenU: 3. 初回ログイン<br/>ログインボタンをクリック
+    GenU->>EntraID: 4. SAML SSO 認証
+    EntraID->>User: 5. 認証画面表示
+    User->>EntraID: 6. 認証情報入力
+    EntraID->>Cognito: 7. SAML Assertion 送信<br/>email, groups
+
+    Note over Cognito: ユーザーが存在しないことを確認
+
+    Cognito->>Cognito: 8. ユーザー自動作成<br/>EntraID_newuser@example.com
+    Cognito->>Lambda: 9. Pre-Token Generation トリガー
+    Lambda->>EntraID: 10. Graph API でグループ情報取得
+    EntraID->>Lambda: 11. Group: Engineering-User
+    Lambda->>Cognito: 12. Engineering-User グループに追加
+    Lambda->>Cognito: 13. JWT Claims 設定<br/>cognito:groups, custom:department
+    Cognito->>GenU: 14. JWT 発行
+
+    GenU->>User: 15. ログイン成功<br/>Engineering 部門にアクセス可能
+```
+
+**手順の詳細:**
+
+| ステップ | 実行者 | 操作 | 所要時間 | 自動化レベル |
+|---------|-------|------|---------|------------|
+| 1-2 | Entra ID 管理者 | Entra ID ポータルでユーザー作成とグループ追加 | 5分 | 手動 |
+| 3 | 新規ユーザー | GenU アプリにアクセス、ログインボタンをクリック | 10秒 | 手動 |
+| 4-14 | システム | SAML SSO 認証、Cognito ユーザー作成、グループ同期 | 2-3秒 | 完全自動 |
+| 15 | - | ログイン完了 | - | - |
+
+**ユーザー作成の自動化ポイント:**
+- ✅ Cognito へのユーザー作成は完全自動（AWS 側の操作不要）
+- ✅ グループ同期も完全自動（mapSamlGroups Lambda）
+- ✅ 部門属性（custom:department）も初回ログイン時に自動設定
+- ✅ JWT にグループ情報が自動的に含まれる
+
+---
+
+#### 3.2.2 ユーザー削除フロー
+
+```mermaid
+sequenceDiagram
+    participant Admin as Entra ID 管理者
+    participant EntraID as Entra ID
+    participant Cognito as AWS Cognito
+    participant ExUser as 退職者
+    participant GenU as GenU アプリ
+
+    Admin->>EntraID: 1. ユーザー削除<br/>exemployee@example.com
+
+    Note over EntraID: ユーザー削除完了
+    Note over Cognito: EntraID_exemployee@example.com<br/>は残存（ゴーストユーザー）
+
+    ExUser->>GenU: 2. ログイン試行
+    GenU->>EntraID: 3. SAML SSO 認証要求
+    EntraID->>ExUser: 4. ❌ 認証失敗<br/>User not found
+
+    Note over ExUser,GenU: ログイン不可<br/>アクセス拒否
+
+    Note over Cognito: （オプション）月次クリーンアップジョブ<br/>90日以上未使用ユーザーを削除
+```
+
+**ユーザー削除の動作:**
+
+| 時点 | Entra ID | Cognito | ログイン可否 | セキュリティリスク |
+|------|---------|---------|------------|------------------|
+| 削除前 | ✅ 存在 | ✅ 存在 | ✅ 可能 | - |
+| 削除直後 | ❌ 削除済み | ✅ 残存 | ❌ 不可 | なし（SAML 認証失敗） |
+| 90日後（クリーンアップ） | ❌ 削除済み | ❌ 削除済み | ❌ 不可 | なし |
+
+**重要な考慮事項:**
+- Cognito に「ゴーストユーザー」が残っても、Entra ID で認証できないためセキュリティリスクはない
+- コンプライアンスやストレージ最適化のため、定期クリーンアップジョブを実装することを推奨
+
+---
+
+### 3.3 グループとロールの管理
+
+#### 3.3.1 グループ構造
+
+```
+Entra ID (Azure AD)
+├─ Engineering-Admin     (部門管理者グループ)
+├─ Engineering-User      (部門ユーザーグループ)
+├─ Sales-Admin           (部門管理者グループ)
+└─ Sales-User            (部門ユーザーグループ)
+     ↓ SAML SSO + mapSamlGroups Lambda
+Cognito User Pool
+├─ Engineering-Admin     (自動同期)
+├─ Engineering-User      (自動同期)
+├─ Sales-Admin           (自動同期)
+└─ Sales-User            (自動同期)
+```
+
+**グループの命名規則:**
+- フォーマット: `{Department}-{Role}`
+- Department: `Engineering`, `Sales`, など
+- Role: `Admin`, `User`
+
+**ロールの権限:**
+
+| ロール | S3 RAG ファイル | ユーザ管理 | Knowledge Base | 部門切り替え |
+|--------|----------------|----------|----------------|-------------|
+| Admin | ✅ アップロード可能 | ✅ 招待・削除可能 | ✅ 部門データにアクセス | ✅ 可能 |
+| User | ❌ 読み取りのみ | ❌ 不可 | ✅ 部門データにアクセス | ✅ 可能 |
+
+---
+
+#### 3.3.2 グループ追加フロー
+
+```mermaid
+sequenceDiagram
+    participant Admin as Entra ID 管理者
+    participant EntraID as Entra ID
+    participant User as ユーザー
+    participant Cognito as AWS Cognito
+    participant Lambda as mapSamlGroups Lambda
+    participant GenU as GenU アプリ
+
+    Admin->>EntraID: 1. ユーザーをグループに追加<br/>user@example.com → Sales-Admin
+
+    Note over EntraID: グループ追加完了
+
+    User->>GenU: 2. 次回ログイン<br/>または JWT リフレッシュ
+    GenU->>EntraID: 3. SAML SSO 認証
+    EntraID->>Cognito: 4. SAML Assertion<br/>groups: [Engineering-User, Sales-Admin]
+    Cognito->>Lambda: 5. Pre-Token Generation トリガー
+    Lambda->>Cognito: 6. 現在のグループ取得<br/>[Engineering-User]
+    Lambda->>EntraID: 7. Graph API でグループ情報取得
+    EntraID->>Lambda: 8. Groups: [Engineering-User, Sales-Admin]
+    Lambda->>Cognito: 9. 新規グループに追加<br/>Sales-Admin
+    Lambda->>Cognito: 10. JWT Claims 更新<br/>cognito:groups: [Engineering-User, Sales-Admin]
+    Cognito->>GenU: 11. 新しい JWT 発行
+
+    GenU->>User: 12. Sales 部門の管理者権限が付与される
+```
+
+**グループ追加の同期タイミング:**
+- ログイン時: 即座に同期
+- JWT リフレッシュ時: 最大1時間以内に同期
+- 手動リフレッシュ: ユーザーがログアウト→ログインで即座に同期
+
+---
+
+#### 3.3.3 グループ削除フロー
+
+セクション 2.1「グループ削除同期」を参照してください。Entra ID でグループから削除されたユーザーは、次回ログインまたは JWT リフレッシュ時（最大24時間以内）に Cognito グループからも削除されます。
+
+---
+
+### 3.4 部門管理者の操作フロー
+
+#### 3.4.1 現在の実装（Read-Only 方式）
+
+**部門管理者ができること:**
+- ✅ 所属部門のユーザー一覧を表示
+- ✅ ユーザーのロール（Admin/User）を確認
+- ✅ S3 RAG インジェスト用ファイルのアップロード
+- ✅ 部門の切り替え（複数部門を管理する場合）
+
+**部門管理者ができないこと:**
+- ❌ 新規ユーザーの招待（Entra ID 管理者に依頼）
+- ❌ ユーザーの削除（Entra ID 管理者に依頼）
+- ❌ ユーザーのロール変更（Entra ID 管理者に依頼）
+
+**運用フロー:**
+
+```
+部門管理者: 新規ユーザーを追加したい
+  ↓
+[GenU UI] 「ユーザー招待」ボタン → 招待フォーム表示
+  ├─ Email: newuser@example.com
+  ├─ Department: Sales
+  └─ Role: User
+  ↓
+[GenU UI] 「招待リクエストを送信」ボタンをクリック
+  ↓
+[システム] Entra ID 管理者にメール通知
+  件名: [GenU] 新規ユーザー招待リクエスト
+  本文:
+    部門: Sales
+    メール: newuser@example.com
+    ロール: User
+    リクエスト者: manager@example.com
+  ↓
+[Entra ID 管理者] Entra ID ポータルで操作
+  1. ユーザー作成: newuser@example.com
+  2. グループ追加: Sales-User
+  3. 招待メール送信
+  ↓
+[新規ユーザー] 招待メールを受信 → GenU にログイン
+  ↓
+[自動処理] Cognito ユーザー作成、グループ同期
+  ↓
+[完了] 新規ユーザーがアクセス可能
+```
+
+**メリット:**
+- ✅ Entra ID が Single Source of Truth を維持
+- ✅ AWS からの書き込み権限不要（セキュリティリスク最小）
+- ✅ 既存の Entra ID 管理フローを活用
+
+**デメリット:**
+- ⚠️ ユーザー追加に手動ステップが必要
+- ⚠️ Entra ID 管理者の負荷増加
+
+---
+
+#### 3.4.2 将来の拡張案（Hybrid 方式）
+
+**実装する場合の設計（参考）:**
+
+```mermaid
+sequenceDiagram
+    participant DeptAdmin as 部門管理者
+    participant GenU as GenU アプリ
+    participant Lambda as inviteUser Lambda
+    participant GraphAPI as Microsoft Graph API
+    participant EntraID as Entra ID
+    participant NewUser as 新規ユーザー
+    participant Cognito as AWS Cognito
+
+    DeptAdmin->>GenU: 1. ユーザー招待フォーム<br/>email, department, role
+    GenU->>Lambda: 2. POST /api/user/invite
+    Lambda->>GraphAPI: 3. Create User<br/>POST /v1.0/users
+    GraphAPI->>EntraID: 4. ユーザー作成
+    Lambda->>GraphAPI: 5. Add to Group<br/>POST /v1.0/groups/{id}/members
+    GraphAPI->>EntraID: 6. Sales-User に追加
+    Lambda->>GraphAPI: 7. Send Invitation<br/>POST /v1.0/invitations
+    GraphAPI->>NewUser: 8. 招待メール送信
+
+    Lambda->>GenU: 9. 成功レスポンス
+    GenU->>DeptAdmin: 10. 「招待メールを送信しました」
+
+    NewUser->>GenU: 11. 初回ログイン
+    GenU->>EntraID: 12. SAML SSO 認証
+    EntraID->>Cognito: 13. SAML Assertion
+    Cognito->>Cognito: 14. ユーザー作成、グループ同期
+    Cognito->>GenU: 15. JWT 発行
+    GenU->>NewUser: 16. ログイン成功
+```
+
+**必要な実装:**
+
+1. **Lambda 関数: inviteUser**
+```typescript
+// packages/cdk/lambda/inviteUser.ts (新規作成)
+
+export const handler = async (event: APIGatewayProxyEvent) => {
+  const { email, department, role } = JSON.parse(event.body || '{}');
+
+  // 権限チェック: Admin ロールのみ実行可能
+  const claims = event.requestContext.authorizer?.claims;
+  const currentDepartment = claims?.['custom:department'];
+  const groups = claims?.['cognito:groups'] || [];
+  const userRole = groups.find(g => g.includes(currentDepartment))?.split('-')[1];
+
+  if (userRole !== 'Admin') {
+    return {
+      statusCode: 403,
+      body: JSON.stringify({ error: 'Admin role required' })
+    };
+  }
+
+  // Microsoft Graph API でユーザー作成
+  const accessToken = await getGraphAccessToken();
+
+  // 1. ユーザー作成
+  const user = await createUser(accessToken, email);
+
+  // 2. グループに追加
+  const groupName = `${department}-${role}`;
+  const groupId = await getGroupIdByName(accessToken, groupName);
+  await addUserToGroup(accessToken, user.id, groupId);
+
+  // 3. 招待メール送信
+  await sendInvitation(accessToken, email);
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ success: true, message: 'User invited successfully' })
+  };
+};
+```
+
+2. **IAM 権限**
+```typescript
+// packages/cdk/lib/construct/api.ts
+
+// Graph API 認証情報の取得権限
+inviteUserFunction.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['secretsmanager:GetSecretValue'],
+  resources: [graphCredentialsSecret.secretArn],
+}));
+```
+
+3. **Azure AD アプリの権限追加**
+```bash
+# Microsoft Graph API の権限を追加
+az ad app permission add \
+  --id {APP_ID} \
+  --api 00000003-0000-0000-c000-000000000000 \
+  --api-permissions \
+    User.Invite.All=Role \
+    GroupMember.ReadWrite.All=Role
+
+# 管理者の同意を付与
+az ad app permission admin-consent --id {APP_ID}
+```
+
+**セキュリティ考慮事項:**
+- ⚠️ Graph API への書き込み権限が必要（`User.Invite.All`, `GroupMember.ReadWrite.All`）
+- ⚠️ Lambda が侵害された場合、Entra ID へ不正な書き込みが可能
+- ⚠️ エラーハンドリングが複雑（Graph API エラー、メール送信失敗など）
+
+**推奨事項:**
+- 現時点では **Read-Only 方式を継続**
+- 部門管理者の運用負荷が高まった場合に Hybrid 方式を検討
+- 実装する場合は、セキュリティレビューと承認プロセスを経ること
+
+---
+
+### 3.5 運用シナリオ
+
+#### シナリオ 1: 新規社員の入社
+
+```
+Day 1: 入社手続き
+  [人事部]
+    ↓ Entra ID に新規ユーザー作成
+  [Entra ID 管理者]
+    ├─ ユーザー作成: newemployee@example.com
+    ├─ 初期グループ追加: Engineering-User
+    └─ 招待メール送信
+
+Day 1 午後: 初回ログイン
+  [新規社員]
+    ↓ 招待メールから GenU にアクセス
+  [Cognito]
+    ├─ ユーザー自動作成
+    └─ Engineering-User グループに追加
+  [GenU アプリ]
+    ✅ Engineering 部門にアクセス可能
+
+Day 30: 昇進（User → Admin）
+  [部門マネージャー]
+    ↓ Entra ID 管理者に昇進依頼メール送信
+  [Entra ID 管理者]
+    ├─ Engineering-User グループから削除
+    └─ Engineering-Admin グループに追加
+  [社員]
+    ↓ 次回ログイン時
+  [mapSamlGroups Lambda]
+    ├─ Engineering-User グループから削除
+    └─ Engineering-Admin グループに追加
+  [GenU アプリ]
+    ✅ 管理者権限が付与される（S3 アップロード、ユーザー管理が可能）
+```
+
+#### シナリオ 2: 退職者の処理
+
+```
+Day 1: 退職日
+  [人事部]
+    ↓ Entra ID 管理者に退職通知
+  [Entra ID 管理者]
+    ├─ ユーザーを無効化（または削除）
+    └─ 全グループから削除
+
+Day 1 以降: ログイン試行
+  [退職者]
+    ↓ GenU にアクセス試行
+  [Entra ID]
+    ❌ SAML 認証失敗（ユーザー無効）
+  [GenU アプリ]
+    ❌ ログイン不可（アクセス拒否）
+
+Month 1: 定期クリーンアップ
+  [CleanupInactiveUsers Lambda]
+    ├─ 90日以上未使用のユーザーを検出
+    └─ Cognito からユーザー削除
+  [Cognito]
+    ✅ ゴーストユーザーが削除される
+```
+
+#### シナリオ 3: 部門異動
+
+```
+Day 1: 異動発令
+  [人事部]
+    ↓ Engineering → Sales への異動
+  [Entra ID 管理者]
+    ├─ Engineering-User グループから削除
+    ├─ Sales-User グループに追加
+    └─ （オプション）custom:department を 'sales' に更新
+
+Day 1 午後: ログイン
+  [社員]
+    ↓ GenU にログイン
+  [mapSamlGroups Lambda]
+    ├─ Engineering-User グループから削除
+    ├─ Sales-User グループに追加
+    └─ custom:department を 'sales' に更新
+  [GenU アプリ]
+    ✅ Sales 部門にアクセス可能
+    ✅ Engineering 部門へのアクセスは不可
+```
+
+---
+
+### 3.6 トラブルシューティング
+
+#### 問題 1: ユーザーが作成されない
+
+**症状:**
+- 新規ユーザーが Entra ID で作成されたが、GenU にログインできない
+
+**原因と対策:**
+
+| 原因 | 確認方法 | 対策 |
+|------|---------|------|
+| Entra ID でグループに追加されていない | `az ad user get-member-groups --id user@example.com` | Entra ID でグループに追加 |
+| SAML SSO の設定ミス | Entra ID の SAML アプリ設定を確認 | Reply URL、Entity ID を確認 |
+| Cognito の SAML プロバイダー設定ミス | Cognito User Pool の SAML プロバイダー確認 | メタデータ XML を再アップロード |
+
+#### 問題 2: グループが同期されない
+
+**症状:**
+- Entra ID でグループに追加したが、Cognito グループに反映されない
+
+**確認手順:**
+```bash
+# 1. Entra ID でグループを確認
+az ad user get-member-groups --id user@example.com
+
+# 2. Cognito でグループを確認
+aws cognito-idp admin-list-groups-for-user \
+  --user-pool-id ap-northeast-1_xxxx \
+  --username EntraID_user@example.com \
+  --region ap-northeast-1
+
+# 3. mapSamlGroups Lambda のログを確認
+aws logs tail /aws/lambda/GenerativeAiUseCasesStack-AuthMapSamlGroupsA7D3F1D-xxxxx \
+  --since 1h \
+  --format short \
+  --region ap-northeast-1
+```
+
+**一般的な原因:**
+- JWT がまだリフレッシュされていない → ユーザーにログアウト→ログインを依頼
+- Cognito にグループが存在しない → CDK で Cognito グループを作成
+- Graph API の認証エラー → Secrets Manager の認証情報を確認
+
+#### 問題 3: 部門切り替え後に権限がない
+
+**症状:**
+- Sales 部門の Admin だったユーザーが、Engineering 部門に切り替えたら User 権限になった
+
+**原因:**
+- Section 1.6 のロール保持ロジックが正しく動作していない
+
+**確認手順:**
+```bash
+# ユーザーの全グループを確認
+aws cognito-idp admin-list-groups-for-user \
+  --user-pool-id ap-northeast-1_xxxx \
+  --username EntraID_user@example.com \
+  --region ap-northeast-1
+
+# 期待される結果:
+# - Engineering-Admin（Admin ロールを保持）
+# - Sales-Admin（Admin ロールを保持）
+```
+
+**対策:**
+- updateUserDepartment Lambda のログを確認
+- ロール保持ロジック（604-625行目）が正しく実行されているか確認
+
+---
+
+### 3.7 今後の拡張計画
+
+#### 短期（1-3ヶ月）
+- [ ] 部門管理者向け UI の改善（ユーザー一覧、ロール確認）
+- [ ] ユーザー招待リクエストの通知機能（部門管理者 → Entra ID 管理者）
+- [ ] 定期クリーンアップジョブの実装と監視
+
+#### 中期（3-6ヶ月）
+- [ ] セルフサービスポータルの検討（部門管理者が直接ユーザーを招待）
+- [ ] Hybrid 方式の実装（Graph API 書き込み権限が承認された場合）
+- [ ] ユーザー招待の承認ワークフロー（部門管理者 → Entra ID 管理者 → 承認）
+
+#### 長期（6ヶ月以降）
+- [ ] ロール変更のセルフサービス化（User → Admin の昇格リクエスト）
+- [ ] 部門間異動の自動化（人事システムとの連携）
+- [ ] コンプライアンスレポートの自動生成（ユーザー棚卸し）
 
 ---
 
@@ -1600,6 +2396,7 @@ aws logs filter-log-events \
 | 2025-12-20 | 3.0 | IAM 権限中心の解説に変更 | Claude Code |
 | 2025-12-20 | 4.0 | 前回の詳細解説を復活、IAM ロール制御の解説を追加、IAM 権限の技術詳細を Appendix に移動 | Claude Code |
 | 2025-12-20 | 4.1 | Section 1.6 を修正: Admin ロールの用途を S3 RAG ファイルアクセスとユーザ管理権限に訂正、Knowledge Base は部門IDのみでフィルタリングすることを明記 | Claude Code |
+| 2025-12-20 | 5.0 | Section 2 のタイトルを「Entra ID と Cognito のユーザ・グループ同期」に変更、Section 2.5 ユーザ同期を追加、第3章「ユーザー管理フローの詳細設計」を新規追加（Read-Only 方式の詳細設計、Hybrid 方式の提案、運用シナリオ、トラブルシューティング） | Claude Code |
 
 ---
 
