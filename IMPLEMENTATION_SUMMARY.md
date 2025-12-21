@@ -1540,6 +1540,7 @@ aws logs filter-log-events \
 [Entra ID]
   ├─ ユーザ: newuser@example.com
   └─ グループ: Engineering-User に追加
+      Object ID: 423e6dc2-dd7b-4bef-a3eb-36f1fb60473c
   ↓
 [新規ユーザが初回ログイン]
   ├─ SAML SSO 認証 (Entra ID)
@@ -1549,15 +1550,89 @@ aws logs filter-log-events \
   ├─ SAML Assertion を受信
   ├─ ユーザが存在しないことを確認
   ├─ ユーザを自動作成: EntraID_newuser@example.com
-  └─ カスタム属性 custom:samlGroups に Entra ID グループ ID を保存
+  └─ カスタム属性 custom:samlGroups に Entra ID グループ Object ID を保存
+      custom:samlGroups = "[423e6dc2-dd7b-4bef-a3eb-36f1fb60473c]"
   ↓
 [Pre-Token Generation Lambda: mapSamlGroups]
-  ├─ Graph API でグループ ID → 表示名に変換
-  ├─ Engineering-User グループに追加
-  └─ JWT に cognito:groups を設定
+  1. custom:samlGroups からグループ Object ID を取得
+     → ["423e6dc2-dd7b-4bef-a3eb-36f1fb60473c"]
+
+  2. Graph API でグループ Object ID → Display Name に変換
+     GET https://graph.microsoft.com/v1.0/groups/423e6dc2-...
+     → { "displayName": "Engineering-User" }
+
+  3. Cognito グループに追加を試行
+     AdminAddUserToGroupCommand("Engineering-User")
+     → Cognito に Engineering-User グループが存在
+     → ✅ 追加成功
+
+  4. JWT Claims に cognito:groups を設定
+     cognito:groups = ["Engineering-User"]
   ↓
 [GenU アプリ]
   ✅ 新規ユーザがログイン成功、Engineering 部門にアクセス可能
+```
+
+**重要: グループ Object ID → Display Name の変換フロー**
+
+```typescript
+// マッピングテーブルは不要！Graph API でリアルタイム変換
+async function getGroupDisplayName(groupId: string, accessToken: string) {
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/groups/${groupId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const group = await response.json();
+  return group.displayName;  // "Engineering-User"
+}
+```
+
+**ホワイトリスト不要: Cognito グループの存在がフィルタとして機能**
+
+```typescript
+// Cognito にグループが存在しない場合は自動的にスキップ
+async function addUserToCognitoGroup(groupName: string) {
+  try {
+    await cognitoClient.send(
+      new AdminAddUserToGroupCommand({ GroupName: groupName })
+    );
+    return true;  // 追加成功
+  } catch (error: any) {
+    if (error.name === 'ResourceNotFoundException') {
+      // Cognito にグループが存在しない → 自動スキップ
+      console.log(`Group ${groupName} not found, skipping`);
+      return false;
+    }
+    throw error;
+  }
+}
+```
+
+**具体例: 複数グループの処理**
+
+```
+Entra ID のグループ:
+  - Engineering-Admin (Object ID: 423e6dc2-...)
+  - Sales-User (Object ID: 4b3610d2-...)
+  - HR-Manager (Object ID: 99999999-...)  ← Cognito には存在しない
+
+SAML Assertion:
+  custom:samlGroups = "[423e6dc2-..., 4b3610d2-..., 99999999-...]"
+
+mapSamlGroups Lambda の処理:
+  1. Graph API で変換:
+     423e6dc2-... → "Engineering-Admin"
+     4b3610d2-... → "Sales-User"
+     99999999-... → "HR-Manager"
+
+  2. Cognito グループに追加を試行:
+     Engineering-Admin → ✅ 存在、追加成功
+     Sales-User → ✅ 存在、追加成功
+     HR-Manager → ⚠️ 存在しない、自動スキップ
+
+結果:
+  cognito:groups = ["Engineering-Admin", "Sales-User"]
+  ↑ HR-Manager は含まれない
 ```
 
 **ポイント:**
@@ -1565,6 +1640,8 @@ aws logs filter-log-events \
 - ✅ Entra ID が Single Source of Truth
 - ✅ 初回ログイン時に必要な全ての設定が完了
 - ✅ 管理者が Cognito を操作する必要なし
+- ✅ **マッピングテーブル不要**（Graph API でリアルタイム変換）
+- ✅ **ホワイトリスト不要**（Cognito グループの存在がフィルタ）
 
 #### ユーザ削除の同期戦略
 
@@ -2397,6 +2474,7 @@ aws cognito-idp admin-list-groups-for-user \
 | 2025-12-20 | 4.0 | 前回の詳細解説を復活、IAM ロール制御の解説を追加、IAM 権限の技術詳細を Appendix に移動 | Claude Code |
 | 2025-12-20 | 4.1 | Section 1.6 を修正: Admin ロールの用途を S3 RAG ファイルアクセスとユーザ管理権限に訂正、Knowledge Base は部門IDのみでフィルタリングすることを明記 | Claude Code |
 | 2025-12-20 | 5.0 | Section 2 のタイトルを「Entra ID と Cognito のユーザ・グループ同期」に変更、Section 2.5 ユーザ同期を追加、第3章「ユーザー管理フローの詳細設計」を新規追加（Read-Only 方式の詳細設計、Hybrid 方式の提案、運用シナリオ、トラブルシューティング） | Claude Code |
+| 2025-12-20 | 5.1 | Section 2.5 ユーザ作成フローを詳細化: グループ Object ID → Display Name の変換フロー、Graph API の使用方法、マッピングテーブル不要、ホワイトリスト不要の説明を追加 | Claude Code |
 
 ---
 
