@@ -131,20 +131,25 @@ erDiagram
 
 ```mermaid
 flowchart TD
-    A["rawデータ生成/取り込み"] --> B["項目ずれ補正 (_fixed)"]
-    B --> C["seed抽出(10件)"]
-    C --> D["マスタ生成 v1"]
-    B --> E["残り90件"]
-    D --> F["マスタ拡張 v2"]
-    F --> G["マスタ正規化"]
-    B --> H["標準辞書生成"]
-    H --> I["タクソノミ生成 L1/L2/L3"]
-    G --> J["マスタでクレンジング"]
-    H --> K["辞書でクレンジング"]
-    J --> L["report_text ローカル置換"]
-    K --> L
-    L --> M["LLM で report_text 書換"]
-    M --> N["CSV/JSON 出力"]
+    subgraph MasterPhase["マスタ作成フェーズ"]
+        A["ダミーデータ100件作成"] --> B["項目ずれ補正 (_fixed)"]
+        B --> C["マスタシード作成(10件=10%)"]
+        C --> D["初期マスタ v1 作成"]
+        B --> E["残り90件を処理"]
+        E --> F["初期マスタ v2 へ拡張"]
+        F --> G["初期マスタ完成 (line/equip/part)"]
+        B --> H["標準辞書作成 (現象/原因/処置)"]
+        H --> I["タクソノミ生成 L1/L2/L3"]
+    end
+
+    subgraph CleansePhase["クレンジングフェーズ"]
+        G --> J["初期マスタでクレンジング"]
+        I --> K["標準辞書でクレンジング"]
+        J --> L["自由入力欄(report_text)の置換"]
+        K --> L
+        L --> M["クレンジング完成 (100件)"]
+        M --> N["CSV/JSON 出力"]
+    end
 
     subgraph AzureOpenAI
         H
