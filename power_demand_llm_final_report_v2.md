@@ -540,7 +540,7 @@ flowchart TD
     end
 
     subgraph Output["出力"]
-        FINAL["補正後予測<br/>base × (1 + final)"]
+        FINAL["補正後予測<br/>base × 1+final"]
     end
 
     RAG --> CLIP
@@ -621,7 +621,7 @@ $$MAPE = \frac{100}{n} \sum_{i=1}^{n} \left|\frac{y_i - \hat{y}_i}{y_i}\right|$$
 
 #### 6.2.4 改善率
 
-$$Improvement\% = \frac{MAE_{baseline} - MAE_{adjusted}}{MAE_{baseline}} \times 100$$
+$$Improvement = \frac{MAE_{baseline} - MAE_{adjusted}}{MAE_{baseline}} \times 100$$
 
 **解釈**: ベースライン（補正なし）に対する補正後のMAE改善割合。正の値は改善、負の値は悪化を示す。
 
@@ -647,7 +647,7 @@ flowchart TB
     end
 
     subgraph MLLayer["機械学習層"]
-        FE[特徴量エンジニアリング<br/>20+特徴量]
+        FE["特徴量エンジニアリング<br/>20以上の特徴量"]
         subgraph Models["予測モデル群"]
             LGBM[LightGBM]
             Chronos[Chronos]
@@ -670,8 +670,8 @@ flowchart TB
     end
 
     subgraph CorrectionEngine["補正エンジン"]
-        Combiner[RAG+LLM合成器<br/>α=0.3, β=0.35]
-        Adjuster[予測値補正<br/>base×(1+adj)]
+        Combiner["RAG+LLM合成器<br/>α=0.3, β=0.35"]
+        Adjuster["予測値補正<br/>base × 1+adj"]
     end
 
     RawData --> FE
@@ -791,7 +791,7 @@ classDiagram
 flowchart TD
     subgraph Phase1["Phase 1: 学習フェーズ"]
         P1_1[データ生成<br/>17,520件] --> P1_2[データ分割<br/>Train/Val/Test]
-        P1_2 --> P1_3[特徴量エンジニアリング<br/>20+特徴量]
+        P1_2 --> P1_3["特徴量エンジニアリング<br/>20以上の特徴量"]
         P1_3 --> P1_4[LightGBM学習]
         P1_3 --> P1_5[SARIMAX学習]
         P1_3 --> P1_6[特異点閾値決定]
@@ -1611,7 +1611,7 @@ flowchart TD
     subgraph Production["本番推奨構成"]
         Input[予測リクエスト] --> Gate{特異点?}
         Gate -->|No| Base[ベースモデル単体<br/>高速・低コスト]
-        Gate -->|Yes| RAG[RAG補正<br/>（LLMはオプション）]
+        Gate -->|Yes| RAG["RAG補正<br/>LLMはオプション"]
         Base --> Output[予測結果]
         RAG --> Output
     end
@@ -1670,7 +1670,7 @@ mape = np.mean(np.abs((y_actual - y_predicted) / y_actual)) * 100
 
 ### A.4 改善率（Improvement Percentage）
 
-$$Improvement\% = \frac{MAE_{baseline} - MAE_{adjusted}}{MAE_{baseline}} \times 100$$
+$$Improvement = \frac{MAE_{baseline} - MAE_{adjusted}}{MAE_{baseline}} \times 100$$
 
 **Python実装**:
 ```python
@@ -1679,7 +1679,7 @@ improvement = (mae_baseline - mae_adjusted) / mae_baseline * 100
 
 ### A.5 Bootstrap 95%信頼区間
 
-$$CI_{95\%} = \bar{x} \pm 1.96 \times \frac{s}{\sqrt{n}}$$
+$$CI_{95} = \bar{x} \pm 1.96 \times \frac{s}{\sqrt{n}}$$
 
 | 記号 | 意味 |
 |------|------|
